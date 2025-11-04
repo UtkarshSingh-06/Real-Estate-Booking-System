@@ -23,8 +23,13 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'realestate_db')]
 
-# Google Maps client
-gmaps_client = googlemaps.Client(key=os.environ.get('GOOGLE_MAPS_API_KEY', ''))
+# Google Maps client (lazy initialization)
+gmaps_client = None
+def get_gmaps_client():
+    global gmaps_client
+    if gmaps_client is None and os.environ.get('GOOGLE_MAPS_API_KEY'):
+        gmaps_client = googlemaps.Client(key=os.environ.get('GOOGLE_MAPS_API_KEY'))
+    return gmaps_client
 
 # Socket.IO server
 sio = socketio.AsyncServer(
