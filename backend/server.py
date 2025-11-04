@@ -294,9 +294,10 @@ async def create_property(prop_data: PropertyCreate, user: User = Depends(get_cu
     
     # Geocode address if lat/lng not provided
     if not prop_data.latitude or not prop_data.longitude:
-        if os.environ.get('GOOGLE_MAPS_API_KEY'):
+        gmaps = get_gmaps_client()
+        if gmaps:
             try:
-                geocode_result = gmaps_client.geocode(prop_data.address)
+                geocode_result = gmaps.geocode(prop_data.address)
                 if geocode_result:
                     location = geocode_result[0]['geometry']['location']
                     prop_data.latitude = location['lat']
