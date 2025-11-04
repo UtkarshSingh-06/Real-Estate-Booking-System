@@ -1,34 +1,83 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+.property-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+.property-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+.chat-container {
+  height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
 }
 
-.App-link {
-    color: #61dafb;
+.messages-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.marker {
+  background: white;
+  border: 2px solid hsl(var(--primary));
+  border-radius: 12px;
+  padding: 4px 8px;
+  font-weight: 600;
+  font-size: 12px;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.marker:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.marker.selected {
+  background: hsl(var(--primary));
+  color: white;
+}
+
+.marker-content {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.loading-spinner {
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: hsl(var(--primary));
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.booking-calendar .rbc-calendar {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.booking-calendar .rbc-event {
+  background: hsl(var(--primary));
+  border-radius: 4px;
+}
+
+.scroll-smooth {
+  scroll-behavior: smooth;
 }
