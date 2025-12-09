@@ -11,9 +11,10 @@ import MessagesPage from './pages/MessagesPage';
 import MyPropertiesPage from './pages/MyPropertiesPage';
 import ProfilePage from './pages/ProfilePage';
 import BookingSuccess from './pages/BookingSuccess';
+import LoginPage from './pages/LoginPage';
 import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 
 export const AuthContext = React.createContext();
 
@@ -27,17 +28,6 @@ function App() {
   }, []);
 
   const checkAuth = async () => {
-    // Check for session_id in URL (from OAuth redirect)
-    const hash = window.location.hash;
-    if (hash.includes('session_id=')) {
-      const sessionId = hash.split('session_id=')[1].split('&')[0];
-      await processSession(sessionId);
-      // Clean URL
-      window.history.replaceState(null, '', window.location.pathname);
-      return;
-    }
-
-    // Check existing session
     const token = localStorage.getItem('session_token');
     if (token) {
       try {
@@ -49,32 +39,23 @@ function App() {
       } catch (error) {
         console.error('Auth check failed:', error);
         localStorage.removeItem('session_token');
+        setUser(null);
+        setSessionToken(null);
       }
     }
     setLoading(false);
   };
 
-  const processSession = async (sessionId) => {
-    try {
-      const response = await axios.post(`${BACKEND_URL}/api/auth/session`, {
-        session_id: sessionId
-      });
-      const { session_token, user: userData } = response.data;
-      localStorage.setItem('session_token', session_token);
-      setSessionToken(session_token);
-      setUser(userData);
-      toast.success(`Welcome, ${userData.name}!`);
-    } catch (error) {
-      console.error('Session processing failed:', error);
-      toast.error('Authentication failed');
-    } finally {
-      setLoading(false);
-    }
+  const completeLogin = (userData, token) => {
+    localStorage.setItem('session_token', token);
+    setSessionToken(token);
+    setUser(userData);
+    setLoading(false);
+    toast.success(`Welcome, ${userData.name}!`);
   };
 
   const login = () => {
-    const redirectUrl = `${window.location.origin}/properties`;
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+    window.location.href = '/login';
   };
 
   const logout = async () => {
@@ -102,11 +83,12 @@ function App() {
   }
 
   return (
-    <AuthContext.Provider value={{ user, sessionToken, login, logout }}>
+    <AuthContext.Provider value={{ user, sessionToken, login, logout, completeLogin }}>
       <BrowserRouter>
         <div className="App">
           <Routes>
             <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<LoginPage />} />
             <Route
               path="/properties"
               element={user ? <PropertiesPage /> : <Navigate to="/" />}

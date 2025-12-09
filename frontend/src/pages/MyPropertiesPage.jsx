@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Plus, MapPin, Bed, Bath, Square, DollarSign, Edit, Trash } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 
 const MyPropertiesPage = () => {
   const { sessionToken, user } = useContext(AuthContext);
@@ -129,9 +129,9 @@ const MyPropertiesPage = () => {
   return (
     <div>
       <Navbar />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="my-properties-page">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold">My Properties</h1>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8" data-testid="my-properties-page">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold">My Properties</h1>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/90" data-testid="add-property-btn">

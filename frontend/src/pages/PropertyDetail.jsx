@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 
 const PropertyDetail = () => {
   const { id } = useParams();
@@ -133,12 +133,12 @@ const PropertyDetail = () => {
   return (
     <div>
       <Navbar />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="property-detail-page">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8" data-testid="property-detail-page">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8">
           {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             {/* Images */}
-            <div className="relative h-96 rounded-xl overflow-hidden bg-gradient-to-br from-blue-100 to-cyan-100">
+            <div className="relative h-64 sm:h-96 rounded-xl overflow-hidden bg-gradient-to-br from-blue-100 to-cyan-100">
               {property.images && property.images.length > 0 ? (
                 <img
                   src={property.images[0]}
@@ -159,19 +159,19 @@ const PropertyDetail = () => {
             <Card className="glass">
               <CardContent className="pt-6 space-y-6">
                 <div>
-                  <h1 className="text-4xl font-bold mb-3">{property.title}</h1>
-                  <div className="flex items-center text-gray-600 text-lg">
-                    <MapPin className="h-5 w-5 mr-2" />
-                    <span>{property.address}</span>
+                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-3">{property.title}</h1>
+                  <div className="flex items-center text-gray-600 text-sm sm:text-lg">
+                    <MapPin className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                    <span className="break-words">{property.address}</span>
                   </div>
                 </div>
 
-                <div className="flex items-center text-[hsl(var(--primary))] text-4xl font-bold">
-                  <DollarSign className="h-8 w-8" />
+                <div className="flex items-center text-[hsl(var(--primary))] text-2xl sm:text-3xl lg:text-4xl font-bold">
+                  <DollarSign className="h-6 w-6 sm:h-8 sm:w-8" />
                   {property.price.toLocaleString()}
                 </div>
 
-                <div className="grid grid-cols-3 gap-6 py-6 border-t border-b">
+                <div className="grid grid-cols-3 gap-3 sm:gap-6 py-4 sm:py-6 border-t border-b">
                   <div className="text-center">
                     <Bed className="h-8 w-8 mx-auto mb-2 text-gray-600" />
                     <div className="text-2xl font-bold">{property.bedrooms}</div>
@@ -211,10 +211,10 @@ const PropertyDetail = () => {
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {/* Booking Card */}
             {user.id !== property.owner_id && (
-              <Card className="glass sticky top-20">
+              <Card className="glass lg:sticky lg:top-20">
                 <CardContent className="pt-6 space-y-4">
                   <h3 className="text-2xl font-bold">Book a Viewing</h3>
                   <p className="text-gray-600">Schedule a visit to this property</p>
