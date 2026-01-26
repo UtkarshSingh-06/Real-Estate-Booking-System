@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { MessageCircle, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const MessagesPage = () => {
   const { sessionToken, user } = useContext(AuthContext);
@@ -132,7 +132,7 @@ const MessagesPage = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="messages-page">
         <h1 className="text-4xl font-bold mb-8">Messages</h1>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 h-[calc(100vh-200px)] sm:h-[calc(100vh-250px)]">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-250px)]">
           {/* Conversations List */}
           <Card className="glass lg:col-span-1 overflow-hidden">
             <CardHeader>
