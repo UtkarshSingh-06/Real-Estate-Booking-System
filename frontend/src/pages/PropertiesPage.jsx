@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { MapPin, Bed, Bath, Square, DollarSign, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const PropertiesPage = () => {
   const { sessionToken } = useContext(AuthContext);
@@ -95,9 +95,9 @@ const PropertiesPage = () => {
       <Navbar />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="properties-page">
         {/* Search and Filters */}
-        <div className="glass rounded-xl p-4 sm:p-6 mb-8">
-          <h2 className="text-xl sm:text-2xl font-bold mb-4">Search Properties</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="glass rounded-xl p-6 mb-8">
+          <h2 className="text-2xl font-bold mb-4">Search Properties</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <Input
               type="number"
               placeholder="Min Price"
