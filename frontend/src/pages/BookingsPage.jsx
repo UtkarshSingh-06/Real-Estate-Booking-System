@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Calendar, MapPin, Clock, DollarSign, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const BookingsPage = () => {
   const { sessionToken, user } = useContext(AuthContext);
@@ -167,8 +167,8 @@ const BookingsPage = () => {
   return (
     <div>
       <Navbar />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8" data-testid="bookings-page">
-        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-4 sm:mb-8">My Bookings</h1>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="bookings-page">
+        <h1 className="text-4xl font-bold mb-8">My Bookings</h1>
 
         <Tabs defaultValue="my-bookings" className="space-y-6">
           <TabsList className="glass">
