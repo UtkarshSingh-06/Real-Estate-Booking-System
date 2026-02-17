@@ -29,10 +29,18 @@ const PropertyDetail = () => {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [messageOpen, setMessageOpen] = useState(false);
   const [message, setMessage] = useState('');
+  const [similarProperties, setSimilarProperties] = useState([]);
 
   useEffect(() => {
     fetchProperty();
   }, [id]);
+
+  useEffect(() => {
+    if (!id || !sessionToken) return;
+    axios.get(`${BACKEND_URL}/api/ai/recommendations?property_id=${id}&limit=3`, {
+      headers: { Authorization: `Bearer ${sessionToken}` }
+    }).then((res) => setSimilarProperties(res.data.recommendations || [])).catch(() => {});
+  }, [id, sessionToken]);
 
   const fetchProperty = async () => {
     try {
@@ -202,6 +210,28 @@ const PropertyDetail = () => {
                         <Badge key={index} variant="secondary" className="text-sm py-1 px-3">
                           {amenity}
                         </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {similarProperties.length > 0 && (
+                  <div>
+                    <h2 className="text-2xl font-bold mb-3">Similar Properties</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {similarProperties.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => navigate(`/properties/${p.id}`)}
+                          className="text-left rounded-lg border p-3 hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="font-medium line-clamp-1">{p.title}</div>
+                          <div className="text-sm text-[hsl(var(--primary))] font-bold mt-1">
+                            ${p.price?.toLocaleString()}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">{p.bedrooms} bed · {p.area_sqft} sqft</div>
+                        </button>
                       ))}
                     </div>
                   </div>
