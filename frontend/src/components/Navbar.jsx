@@ -1,7 +1,7 @@
 import React, { useContext, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { AuthContext } from '../App';
-import { Home, Building2, Calendar, MessageCircle, User, LogOut, Menu, X } from 'lucide-react';
+import { Home, Building2, Calendar, MessageCircle, User, LogOut, Menu, X, Calculator, BarChart2 } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   DropdownMenu,
@@ -19,6 +19,8 @@ const Navbar = () => {
 
   const navItems = [
     { path: '/properties', label: 'Properties', icon: Home },
+    { path: '/price-estimate', label: 'Price Estimate', icon: Calculator },
+    { path: '/analytics', label: 'Market Insights', icon: BarChart2 },
     { path: '/bookings', label: 'My Bookings', icon: Calendar },
     { path: '/messages', label: 'Messages', icon: MessageCircle },
   ];
