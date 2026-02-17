@@ -11,6 +11,8 @@ import MessagesPage from './pages/MessagesPage';
 import MyPropertiesPage from './pages/MyPropertiesPage';
 import ProfilePage from './pages/ProfilePage';
 import BookingSuccess from './pages/BookingSuccess';
+import PriceEstimatePage from './pages/PriceEstimatePage';
+import AnalyticsPage from './pages/AnalyticsPage';
 import './App.css';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
@@ -197,6 +199,14 @@ function App() {
             <Route
               path="/booking-success"
               element={user ? <BookingSuccess /> : <Navigate to="/" />}
+            />
+            <Route
+              path="/price-estimate"
+              element={user ? <PriceEstimatePage /> : <Navigate to="/" />}
+            />
+            <Route
+              path="/analytics"
+              element={user ? <AnalyticsPage /> : <Navigate to="/" />}
             />
           </Routes>
           <Toaster position="top-right" richColors />
