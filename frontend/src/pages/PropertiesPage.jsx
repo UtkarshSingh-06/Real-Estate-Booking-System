@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../App';
@@ -8,17 +8,22 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { MapPin, Bed, Bath, Square, DollarSign, Search } from 'lucide-react';
+import { MapPin, Bed, Bath, Square, DollarSign, Search, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
+const DEBOUNCE_MS = 400;
 
 const PropertiesPage = () => {
   const { sessionToken } = useContext(AuthContext);
   const navigate = useNavigate();
   const [properties, setProperties] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [recommendationType, setRecommendationType] = useState('');
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
+    query: '',
     min_price: '',
     max_price: '',
     property_type: '',
@@ -26,11 +31,7 @@ const PropertiesPage = () => {
     bathrooms: ''
   });
 
-  useEffect(() => {
-    fetchProperties();
-  }, []);
-
-  const fetchProperties = async () => {
+  const fetchProperties = useCallback(async () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/properties`, {
         headers: { Authorization: `Bearer ${sessionToken}` }
@@ -42,12 +43,58 @@ const PropertiesPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sessionToken]);
+
+  const fetchRecommendations = useCallback(async () => {
+    try {
+      const response = await axios.get(`${BACKEND_URL}/api/ai/recommendations?limit=6`, {
+        headers: { Authorization: `Bearer ${sessionToken}` }
+      });
+      setRecommendations(response.data.recommendations || []);
+      setRecommendationType(response.data.type || '');
+    } catch (error) {
+      console.error('Error fetching recommendations:', error);
+    }
+  }, [sessionToken]);
+
+  useEffect(() => {
+    fetchProperties();
+    fetchRecommendations();
+  }, [fetchProperties, fetchRecommendations]);
+
+  const runRealtimeSearch = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (filters.query?.trim()) params.set('q', filters.query.trim());
+    if (filters.min_price) params.set('min_price', filters.min_price);
+    if (filters.max_price) params.set('max_price', filters.max_price);
+    if (filters.property_type) params.set('property_type', filters.property_type);
+    if (filters.bedrooms) params.set('bedrooms', filters.bedrooms);
+    if (filters.bathrooms) params.set('bathrooms', filters.bathrooms);
+    try {
+      const response = await axios.get(
+        `${BACKEND_URL}/api/properties/search/realtime?${params.toString()}`,
+        { headers: { Authorization: `Bearer ${sessionToken}` } }
+      );
+      setProperties(response.data.properties);
+    } catch (error) {
+      console.error('Realtime search error:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionToken, filters]);
+
+  const hasFilters = filters.query?.trim() || filters.min_price || filters.max_price || filters.property_type || filters.bedrooms || filters.bathrooms;
+  useEffect(() => {
+    if (!sessionToken || !hasFilters) return;
+    setLoading(true);
+    const t = setTimeout(runRealtimeSearch, DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [sessionToken, hasFilters, runRealtimeSearch]);
 
   const handleSearch = async () => {
     setLoading(true);
     try {
-      const searchParams = {};
+      const searchParams = { query: filters.query?.trim() || undefined };
       if (filters.min_price) searchParams.min_price = parseFloat(filters.min_price);
       if (filters.max_price) searchParams.max_price = parseFloat(filters.max_price);
       if (filters.property_type) searchParams.property_type = filters.property_type;
@@ -70,6 +117,7 @@ const PropertiesPage = () => {
 
   const handleClearFilters = () => {
     setFilters({
+      query: '',
       min_price: '',
       max_price: '',
       property_type: '',
@@ -96,8 +144,15 @@ const PropertiesPage = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="properties-page">
         {/* Search and Filters */}
         <div className="glass rounded-xl p-6 mb-8">
-          <h2 className="text-2xl font-bold mb-4">Search Properties</h2>
+          <h2 className="text-2xl font-bold mb-4">Real-Time Property Search</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <Input
+              placeholder="Search by keyword, address..."
+              value={filters.query}
+              onChange={(e) => setFilters({ ...filters, query: e.target.value })}
+              className="lg:col-span-2"
+              data-testid="search-query-input"
+            />
             <Input
               type="number"
               placeholder="Min Price"
@@ -149,10 +204,59 @@ const PropertiesPage = () => {
           </div>
         </div>
 
+        {/* Recommended for you */}
+        {recommendations.length > 0 && (
+          <div className="mb-10">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+              <Sparkles className="h-6 w-6 text-[hsl(var(--primary))]" />
+              {recommendationType === 'personalized' && 'Recommended for you'}
+              {recommendationType === 'similar' && 'Similar properties'}
+              {recommendationType === 'trending' && 'Trending listings'}
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {recommendations.map((property) => (
+                <Card key={property.id} className="property-card glass overflow-hidden hover:shadow-2xl">
+                  <div className="relative h-40 bg-gradient-to-br from-blue-100 to-cyan-100">
+                    {property.images?.length > 0 ? (
+                      <img src={property.images[0]} alt={property.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <MapPin className="h-12 w-12 text-gray-400" />
+                      </div>
+                    )}
+                    <Badge className="absolute top-2 right-2 bg-white text-gray-900">{property.property_type}</Badge>
+                  </div>
+                  <CardContent className="pt-3">
+                    <h3 className="font-bold line-clamp-1">{property.title}</h3>
+                    <div className="flex items-center text-gray-600 text-sm mt-1">
+                      <MapPin className="h-3 w-3 mr-1" />
+                      <span className="line-clamp-1">{property.address}</span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
+                      <span>{property.bedrooms} bed</span>
+                      <span>{property.bathrooms} bath</span>
+                      <span>{property.area_sqft} sqft</span>
+                    </div>
+                    <div className="flex items-center text-[hsl(var(--primary))] font-bold mt-2">
+                      <DollarSign className="h-4 w-4" />
+                      {property.price?.toLocaleString()}
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <Button className="w-full bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/90" onClick={() => navigate(`/properties/${property.id}`)}>
+                      View Details
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Properties Grid */}
         <div className="mb-6">
           <h2 className="text-3xl font-bold mb-2">Available Properties</h2>
-          <p className="text-gray-600">{properties.length} properties found</p>
+          <p className="text-gray-600">{properties.length} properties found • Results update as you type</p>
         </div>
 
         {properties.length === 0 ? (
