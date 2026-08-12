@@ -15,6 +15,7 @@ from app.models.booking import Booking
 from app.models.property import Property
 from app.schemas.property import PropertyCreate, PropertySearchQuery
 from app.schemas.user import UserOut
+from app.services.deposit import calculate_deposit
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,13 @@ def _geocode(address: str) -> tuple[float, float]:
 
 
 def serialize_property(prop: Property) -> dict:
+    settings = get_settings()
+    estimated_deposit = None
+    try:
+        if prop.price and prop.price > 0:
+            estimated_deposit = calculate_deposit(prop.price, settings)
+    except Exception:
+        estimated_deposit = None
     return {
         "id": prop.id,
         "owner_id": prop.owner_id,
@@ -52,6 +60,8 @@ def serialize_property(prop: Property) -> dict:
         "amenities": prop.amenities or [],
         "images": prop.images or [],
         "status": prop.status,
+        "estimated_deposit": estimated_deposit,
+        "deposit_policy": f"{int(settings.default_deposit_percent * 100)}% of listing price",
         "created_at": prop.created_at.isoformat() if prop.created_at else None,
     }
 
