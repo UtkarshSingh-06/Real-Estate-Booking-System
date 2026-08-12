@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { AuthContext } from '../App';
+import { useAuth } from '../context/AuthContext';
+import { createProperty, deleteProperty, getMyProperties } from '../services/api';
 import Navbar from '../components/Navbar';
 import { Card, CardContent, CardFooter } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -14,10 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Plus, MapPin, Bed, Bath, Square, DollarSign, Edit, Trash } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 const MyPropertiesPage = () => {
-  const { sessionToken, user } = useContext(AuthContext);
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,9 +43,7 @@ const MyPropertiesPage = () => {
 
   const fetchProperties = async () => {
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/properties/my`, {
-        headers: { Authorization: `Bearer ${sessionToken}` }
-      });
+      const response = await getMyProperties();
       setProperties(response.data.properties);
     } catch (error) {
       console.error('Error fetching properties:', error);
@@ -73,11 +69,7 @@ const MyPropertiesPage = () => {
         amenities: formData.amenities.split(',').map(a => a.trim()).filter(a => a)
       };
 
-      await axios.post(
-        `${BACKEND_URL}/api/properties`,
-        propertyData,
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
+      await createProperty(propertyData);
       
       toast.success('Property created successfully!');
       setDialogOpen(false);
@@ -104,9 +96,7 @@ const MyPropertiesPage = () => {
     if (!window.confirm('Are you sure you want to delete this property?')) return;
 
     try {
-      await axios.delete(`${BACKEND_URL}/api/properties/${propertyId}`, {
-        headers: { Authorization: `Bearer ${sessionToken}` }
-      });
+      await deleteProperty(propertyId);
       toast.success('Property deleted');
       fetchProperties();
     } catch (error) {
