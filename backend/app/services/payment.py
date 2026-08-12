@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 import stripe
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -23,12 +24,31 @@ from app.services.booking import mark_booking_confirmed_paid
 
 logger = logging.getLogger(__name__)
 
+# Only bookings awaiting buyer payment may start/resume checkout.
+CHECKOUT_ELIGIBLE_STATUSES = {
+    BookingStatus.PAYMENT_PENDING.value,
+}
+
 
 def _configure_stripe() -> None:
     settings = get_settings()
     if not settings.stripe_api_key:
         raise AppError("Stripe not configured", status_code=503, code="stripe_unconfigured")
     stripe.api_key = settings.stripe_api_key
+
+
+async def _get_pending_checkout(
+    db: AsyncSession, booking_id: str, user_id: str
+) -> PaymentTransaction | None:
+    result = await db.execute(
+        select(PaymentTransaction).where(
+            PaymentTransaction.booking_id == booking_id,
+            PaymentTransaction.user_id == user_id,
+            PaymentTransaction.payment_status == PaymentStatus.PENDING.value,
+            PaymentTransaction.status == PaymentTransactionStatus.PENDING.value,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 async def create_checkout(
@@ -38,7 +58,6 @@ async def create_checkout(
     origin_url: str,
 ) -> dict:
     _configure_stripe()
-    settings = get_settings()
 
     result = await db.execute(
         select(Booking).where(Booking.id == booking_id).with_for_update()
@@ -48,12 +67,29 @@ async def create_checkout(
         raise NotFoundError("Booking not found")
     if booking.user_id != user.id:
         raise ForbiddenError("Not authorized")
-    if booking.status not in (
+
+    if booking.status in (
         BookingStatus.REQUESTED.value,
-        BookingStatus.APPROVED.value,
-        BookingStatus.PAYMENT_PENDING.value,
         "pending",
+        BookingStatus.APPROVED.value,
     ):
+        raise AppError(
+            "Booking must be approved by the owner before payment",
+            status_code=400,
+            code="approval_required",
+        )
+    if booking.status in (
+        BookingStatus.REJECTED.value,
+        BookingStatus.CANCELLED.value,
+        BookingStatus.EXPIRED.value,
+    ):
+        raise AppError(
+            f"Cannot pay for booking in '{booking.status}' status",
+            status_code=400,
+        )
+    if booking.status == BookingStatus.CONFIRMED.value:
+        raise AppError("Booking is already confirmed", status_code=400)
+    if booking.status not in CHECKOUT_ELIGIBLE_STATUSES:
         raise AppError(
             f"Booking status '{booking.status}' does not allow payment",
             status_code=400,
@@ -61,14 +97,15 @@ async def create_checkout(
     if booking.payment_status == PaymentStatus.PAID.value:
         raise AppError("Booking is already paid", status_code=400)
 
-    # Move to payment_pending when checkout is created
-    if booking.status in (
-        BookingStatus.REQUESTED.value,
-        BookingStatus.APPROVED.value,
-        "pending",
-    ):
-        booking.status = BookingStatus.PAYMENT_PENDING.value
-        booking.updated_at = utcnow()
+    # Resume an open checkout session when one already exists.
+    existing_txn = await _get_pending_checkout(db, booking_id, user.id)
+    if existing_txn:
+        try:
+            session = stripe.checkout.Session.retrieve(existing_txn.session_id)
+            if session.status == "open" and session.url:
+                return {"url": session.url, "session_id": session.id}
+        except stripe.StripeError as exc:
+            logger.warning("Could not resume session %s: %s", existing_txn.session_id, exc)
 
     success_url = f"{origin_url.rstrip('/')}/booking-success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin_url.rstrip('/')}/bookings"
@@ -132,7 +169,7 @@ async def _apply_paid_session(db: AsyncSession, session_id: str, session_obj: An
         return
 
     if txn.payment_status == PaymentStatus.PAID.value:
-        return  # idempotent no-op
+        return
 
     txn.payment_status = PaymentStatus.PAID.value
     txn.status = PaymentTransactionStatus.COMPLETED.value
@@ -147,16 +184,62 @@ async def _apply_paid_session(db: AsyncSession, session_id: str, session_obj: An
     await db.flush()
 
 
+async def _process_webhook_event(db: AsyncSession, event: dict) -> None:
+    event_type = event["type"]
+    if event_type == "checkout.session.completed":
+        session = event["data"]["object"]
+        if session.get("payment_status") == "paid" or session.get("status") == "complete":
+            await _apply_paid_session(db, session["id"], session)
+    elif event_type == "checkout.session.expired":
+        session = event["data"]["object"]
+        result = await db.execute(
+            select(PaymentTransaction).where(
+                PaymentTransaction.session_id == session["id"]
+            )
+        )
+        txn = result.scalar_one_or_none()
+        if txn and txn.payment_status == PaymentStatus.PENDING.value:
+            txn.payment_status = PaymentStatus.EXPIRED.value
+            txn.status = PaymentTransactionStatus.EXPIRED.value
+            txn.updated_at = utcnow()
+            booking_result = await db.execute(
+                select(Booking).where(Booking.id == txn.booking_id).with_for_update()
+            )
+            booking = booking_result.scalar_one_or_none()
+            if booking and booking.status == BookingStatus.PAYMENT_PENDING.value:
+                booking.status = BookingStatus.EXPIRED.value
+                booking.payment_status = PaymentStatus.EXPIRED.value
+                booking.slot_key = None
+                booking.updated_at = utcnow()
+    elif event_type in ("charge.refunded", "refund.created"):
+        obj = event["data"]["object"]
+        session_id = None
+        if isinstance(obj, dict):
+            session_id = obj.get("metadata", {}).get("checkout_session_id")
+        if session_id:
+            result = await db.execute(
+                select(PaymentTransaction).where(PaymentTransaction.session_id == session_id)
+            )
+            txn = result.scalar_one_or_none()
+            if txn:
+                txn.payment_status = PaymentStatus.REFUNDED.value
+                txn.status = PaymentTransactionStatus.REFUNDED.value
+                txn.updated_at = utcnow()
+                booking_result = await db.execute(
+                    select(Booking).where(Booking.id == txn.booking_id)
+                )
+                booking = booking_result.scalar_one_or_none()
+                if booking:
+                    booking.payment_status = PaymentStatus.REFUNDED.value
+                    booking.updated_at = utcnow()
+
+
 async def get_payment_status(
     db: AsyncSession,
     user: UserOut,
     session_id: str,
 ) -> dict:
-    """Read-only status check. Does NOT mutate booking/payment state.
-
-    Stripe webhooks remain authoritative. This endpoint only reports current
-    known state plus live Stripe session status for the UI.
-    """
+    """Read-only status check. Does NOT mutate booking/payment state."""
     _configure_stripe()
 
     result = await db.execute(
@@ -226,54 +309,8 @@ async def handle_stripe_webhook(
     if existing.scalar_one_or_none():
         return {"received": True, "duplicate": True}
 
-    if event_type == "checkout.session.completed":
-        session = event["data"]["object"]
-        if session.get("payment_status") == "paid" or session.get("status") == "complete":
-            await _apply_paid_session(db, session["id"], session)
-    elif event_type == "checkout.session.expired":
-        session = event["data"]["object"]
-        result = await db.execute(
-            select(PaymentTransaction).where(
-                PaymentTransaction.session_id == session["id"]
-            )
-        )
-        txn = result.scalar_one_or_none()
-        if txn and txn.payment_status == PaymentStatus.PENDING.value:
-            txn.payment_status = PaymentStatus.EXPIRED.value
-            txn.status = PaymentTransactionStatus.EXPIRED.value
-            txn.updated_at = utcnow()
-            booking_result = await db.execute(
-                select(Booking).where(Booking.id == txn.booking_id).with_for_update()
-            )
-            booking = booking_result.scalar_one_or_none()
-            if booking and booking.status == BookingStatus.PAYMENT_PENDING.value:
-                booking.status = BookingStatus.EXPIRED.value
-                booking.payment_status = PaymentStatus.EXPIRED.value
-                booking.slot_key = None
-                booking.updated_at = utcnow()
-    elif event_type in ("charge.refunded", "refund.created"):
-        # Best-effort refund handling via payment_intent / metadata if present
-        obj = event["data"]["object"]
-        session_id = None
-        if isinstance(obj, dict):
-            session_id = obj.get("metadata", {}).get("checkout_session_id")
-        if session_id:
-            result = await db.execute(
-                select(PaymentTransaction).where(PaymentTransaction.session_id == session_id)
-            )
-            txn = result.scalar_one_or_none()
-            if txn:
-                txn.payment_status = PaymentStatus.REFUNDED.value
-                txn.status = PaymentTransactionStatus.REFUNDED.value
-                txn.updated_at = utcnow()
-                booking_result = await db.execute(
-                    select(Booking).where(Booking.id == txn.booking_id)
-                )
-                booking = booking_result.scalar_one_or_none()
-                if booking:
-                    booking.payment_status = PaymentStatus.REFUNDED.value
-                    booking.updated_at = utcnow()
-
+    # Claim the event idempotency key first so concurrent deliveries cannot
+    # both execute payment state transitions.
     db.add(
         ProcessedWebhookEvent(
             id=new_id("evt"),
@@ -282,6 +319,14 @@ async def handle_stripe_webhook(
             processed_at=utcnow(),
         )
     )
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        logger.info("Duplicate concurrent webhook %s", event_id)
+        return {"received": True, "duplicate": True}
+
+    await _process_webhook_event(db, event)
+
     logger.info("Processed Stripe webhook %s (%s)", event_id, event_type)
     return {"received": True, "duplicate": False}
