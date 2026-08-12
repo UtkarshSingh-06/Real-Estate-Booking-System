@@ -16,7 +16,6 @@ async def test_create_booking_requires_property_id(client, buyer, tomorrow_iso):
         json={
             "booking_date": tomorrow_iso,
             "time_slot": "10:00 AM",
-            "deposit_amount": 100,
         },
     )
     assert res.status_code == 422
@@ -31,11 +30,12 @@ async def test_create_booking_success(client, buyer, published_property, tomorro
             "property_id": published_property.id,
             "booking_date": tomorrow_iso,
             "time_slot": "10:00 AM",
-            "deposit_amount": 1000,
         },
     )
     assert res.status_code == 200
-    assert res.json()["status"] == "requested"
+    body = res.json()
+    assert body["status"] == "requested"
+    assert body["deposit_amount"] == 50_000.0
 
 
 @pytest.mark.asyncio
@@ -46,7 +46,6 @@ async def test_duplicate_slot_conflict(
         "property_id": published_property.id,
         "booking_date": tomorrow_iso,
         "time_slot": "11:00 AM",
-        "deposit_amount": 1000,
     }
     first = await client.post("/api/bookings", headers=auth_header(buyer), json=payload)
     assert first.status_code == 200
@@ -65,7 +64,6 @@ async def test_cannot_book_own_property(client, owner, published_property, tomor
             "property_id": published_property.id,
             "booking_date": tomorrow_iso,
             "time_slot": "1:00 PM",
-            "deposit_amount": 1000,
         },
     )
     assert res.status_code == 400
@@ -82,7 +80,6 @@ async def test_owner_approve_transition(
             "property_id": published_property.id,
             "booking_date": tomorrow_iso,
             "time_slot": "2:00 PM",
-            "deposit_amount": 1000,
         },
     )
     booking_id = created.json()["id"]
@@ -113,7 +110,6 @@ async def test_invalid_time_slot(client, buyer, published_property, tomorrow_iso
             "property_id": published_property.id,
             "booking_date": tomorrow_iso,
             "time_slot": "3:30 AM",
-            "deposit_amount": 1000,
         },
     )
     assert res.status_code == 422
@@ -127,7 +123,6 @@ async def test_cancel_frees_slot(
         "property_id": published_property.id,
         "booking_date": tomorrow_iso,
         "time_slot": "3:00 PM",
-        "deposit_amount": 1000,
     }
     created = await client.post("/api/bookings", headers=auth_header(buyer), json=payload)
     booking_id = created.json()["id"]
