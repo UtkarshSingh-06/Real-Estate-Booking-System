@@ -1,203 +1,235 @@
 # Real Estate Booking System
 
-A full-stack real estate booking platform enabling intelligent property discovery, bookings, and real-time communication.
+Full-stack property discovery, viewing bookings, Stripe deposits, and realtime messaging.
+
+## Overview
+
+Buyers browse/search listings, request viewing slots, pay deposits via Stripe Checkout, and message owners. Owners manage listings and approve/reject booking requests. The API is FastAPI + MySQL (SQLAlchemy async); the UI is React (CRA/CRACO) + Tailwind/shadcn.
+
+## Architecture
+
+```
+frontend (React)  --REST/JWT-->  backend FastAPI
+                              --Socket.IO-->  authenticated realtime messaging
+                              --webhooks-->  Stripe (payment source of truth)
+                              --SQLAlchemy-->  MySQL
+```
+
+Backend layout:
+
+```
+backend/
+  app/
+    main.py              # FastAPI + Socket.IO ASGI app
+    core/                # config, security, dependencies, enums
+    db/                  # session, base, model registry
+    models/              # SQLAlchemy models
+    schemas/             # Pydantic request/response models
+    routers/             # HTTP routes
+    services/            # business logic (booking, payments, auth, …)
+    websocket/           # authenticated Socket.IO handlers
+  alembic/               # DB migrations
+  tests/                 # pytest suite (SQLite in-memory)
+  server.py              # thin re-export for `uvicorn server:socket_app`
+  .env.example
+```
 
 ## Features
 
-### Core Functionality
+- Google Identity Services login (ID token verified server-side)
+- JWT sessions with role-aware authorization
+- Property CRUD with soft-archive (historical bookings preserved)
+- Search/filter/sort/pagination for listings
+- Booking state machine with slot uniqueness + expiration
+- Stripe Checkout + **verified, idempotent webhooks** (authoritative payment state)
+- Authenticated Socket.IO messaging (identity from JWT, not client `user_id`)
+- Similarity-based price estimator and recommendations (honestly labeled; not ML)
+- Market/owner analytics dashboard
 
-- 🔐 **JWT + Google OAuth Authentication** - Secure user authentication with role-based access control
-- 🏠 **Property Management** - Create, search, and manage properties with advanced filters
-- 📅 **Booking System** - Schedule property viewings with time slots and status management
-- 💳 **Stripe Integration** - Secure deposit payments via Stripe Checkout
-- 💬 **Real-time Messaging** - Live chat between buyers and property owners using Socket.IO
-- 📱 **Responsive Design** - Fully responsive UI that works on all devices
-- 🗺️ **Google Maps Integration** - Geocoding and location services
+## Tech stack
 
-## Tech Stack
+| Layer | Technology |
+|-------|------------|
+| API | FastAPI, Pydantic v2, python-socketio |
+| DB | MySQL 8 + SQLAlchemy 2 async (`aiomysql`), Alembic |
+| Auth | Google ID tokens (`google-auth`), JWT (`PyJWT`) |
+| Payments | Stripe Checkout + webhooks |
+| Frontend | React 19, React Router, Axios, Socket.IO client, Tailwind, shadcn/ui |
 
-- **Backend**: FastAPI, MongoDB, Socket.IO
-- **Frontend**: React, Tailwind CSS, shadcn/ui
-- **Authentication**: JWT, Google OAuth
-- **Payments**: Stripe
-- **Real-time**: Socket.IO
+## Environment variables
 
-## Prerequisites
+Copy examples and fill in real values. **Never commit `.env` files.**
 
-- Python 3.8+
-- Node.js 16+
-- MongoDB (local or cloud instance)
-- Google OAuth credentials
-- Stripe account (for payments)
+### Backend (`backend/.env`)
 
-## Setup Instructions
+See `backend/.env.example`. Required highlights:
 
-### Backend Setup
+- `JWT_SECRET` — long random secret (required)
+- `CORS_ORIGINS` — explicit origins, e.g. `http://localhost:3000` (no `*` in production)
+- `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME` — or `DATABASE_URL`
+- `GOOGLE_CLIENT_ID` — same Web client ID as the frontend
+- `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET`
+- Optional: `GOOGLE_MAPS_API_KEY`
 
-1. Navigate to the backend directory:
+### Frontend (`frontend/.env`)
+
+See `frontend/.env.example`:
+
+- `REACT_APP_BACKEND_URL=http://localhost:8001`
+- `REACT_APP_GOOGLE_CLIENT_ID=...apps.googleusercontent.com`
+
+## Local setup
+
+### 1. Database
+
+MySQL 8+:
+
+```sql
+CREATE DATABASE realestate_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+Or Docker:
+
+```bash
+docker run --name mysql-realestate -e MYSQL_ROOT_PASSWORD=yourpassword -e MYSQL_DATABASE=realestate_db -p 3306:3306 -d mysql:8.0
+```
+
+### 2. Backend
+
 ```bash
 cd backend
-```
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 
-2. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
 pip install -r requirements.txt
+copy .env.example .env   # then edit secrets
 ```
 
-4. Create a `.env` file in the `backend` directory:
-```env
-MONGO_URL=mongodb://localhost:27017
-DB_NAME=realestate_db
-JWT_SECRET=your-secret-key-here
-STRIPE_API_KEY=sk_test_your_stripe_secret_key
-STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret
-GOOGLE_MAPS_API_KEY=your_google_maps_api_key
-CORS_ORIGINS=http://localhost:3000
-REACT_APP_BACKEND_URL=http://localhost:8001
-```
+Run migrations (preferred) or rely on startup `create_all` in development:
 
-5. Start the backend server:
 ```bash
-# For Socket.IO support (recommended):
-uvicorn server:socket_app --reload --port 8001 --host 0.0.0.0
-
-# Or for FastAPI only (without Socket.IO):
-uvicorn server:app --reload --port 8001
+alembic upgrade head
 ```
 
-### Frontend Setup
+Start API + Socket.IO:
 
-1. Navigate to the frontend directory:
+```bash
+uvicorn server:socket_app --reload --host 0.0.0.0 --port 8001
+```
+
+Health: `GET http://localhost:8001/api/health`  
+Docs (non-production): `http://localhost:8001/api/docs`
+
+### 3. Frontend
+
 ```bash
 cd frontend
-```
-
-2. Install dependencies:
-```bash
-yarn install
-# or
 npm install
-```
-
-3. Create a `.env` file in the `frontend` directory:
-```env
-REACT_APP_BACKEND_URL=http://localhost:8001
-REACT_APP_GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
-```
-
-4. Start the development server:
-```bash
-yarn start
-# or
+copy .env.example .env   # set backend URL + Google client ID
 npm start
 ```
 
-## Google OAuth Setup
+Open `http://localhost:3000`.
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select an existing one
-3. Enable Google+ API
-4. Go to "Credentials" and create OAuth 2.0 Client ID
-5. Add authorized JavaScript origins: `http://localhost:3000`
-6. Add authorized redirect URIs: `http://localhost:3000`
-7. Copy the Client ID to your frontend `.env` file
+## Authentication
 
-## Stripe Setup
+1. Frontend loads Google Identity Services and obtains an ID token.
+2. `POST /api/auth/google` with `{ "id_token": "..." }`.
+3. Backend verifies the token against `GOOGLE_CLIENT_ID`, upserts the user, returns a JWT.
+4. Clients send `Authorization: Bearer <token>` on REST calls.
+5. Socket.IO connections pass the same token via `auth: { token }` (server derives `user_id`).
 
-1. Create a Stripe account at [stripe.com](https://stripe.com)
-2. Get your API keys from the Dashboard
-3. Add the secret key to your backend `.env` file
-4. For webhooks, use Stripe CLI or configure in dashboard:
-   ```bash
-   stripe listen --forward-to localhost:8001/api/webhook/stripe
-   ```
+Google Cloud Console: create an OAuth **Web** client, authorized JavaScript origins `http://localhost:3000`.
 
-## Environment Variables
+## Bookings
 
-### Backend (.env)
-- `MONGO_URL` - MongoDB connection string
-- `DB_NAME` - Database name
-- `JWT_SECRET` - Secret key for JWT tokens
-- `STRIPE_API_KEY` - Stripe secret key
-- `STRIPE_WEBHOOK_SECRET` - Stripe webhook secret
-- `GOOGLE_MAPS_API_KEY` - Google Maps API key
-- `CORS_ORIGINS` - Allowed CORS origins (comma-separated)
-- `REACT_APP_BACKEND_URL` - Backend URL for webhooks
+State machine:
 
-### Frontend (.env)
-- `REACT_APP_BACKEND_URL` - Backend API URL
-- `REACT_APP_GOOGLE_CLIENT_ID` - Google OAuth Client ID
+`requested → approved/rejected/cancelled/expired`  
+`approved → payment_pending` (automatic on owner approve)  
+`payment_pending → confirmed` (via Stripe webhook) / `cancelled` / `expired`
 
-## Project Structure
+- Availability is checked under a property row lock.
+- Active holds use a unique `slot_key`; cancelled/rejected/expired clear it so the slot frees.
+- Unpaid requests expire after `BOOKING_REQUEST_EXPIRE_HOURS` (default 48).
 
-```
-Real-Estate-Booking-System/
-├── backend/
-│   ├── server.py          # FastAPI server
-│   ├── requirements.txt    # Python dependencies
-│   └── .env               # Backend environment variables
-├── frontend/
-│   ├── src/
-│   │   ├── components/    # React components
-│   │   ├── pages/         # Page components
-│   │   └── App.js         # Main app component
-│   ├── package.json       # Node dependencies
-│   └── .env              # Frontend environment variables
-└── README.md
+## Stripe
+
+1. Set `STRIPE_API_KEY` and `STRIPE_WEBHOOK_SECRET`.
+2. Forward webhooks locally:
+
+```bash
+stripe listen --forward-to localhost:8001/api/webhook/stripe
 ```
 
-## API Endpoints
+3. `POST /api/payments/create-checkout` creates a Checkout Session.
+4. **Webhooks** mark payments paid and bookings `confirmed` (idempotent via `processed_webhook_events`).
+5. `GET /api/payments/status/{session_id}` is **read-only** for UI polling — it does not mutate booking state.
 
-### Authentication
-- `POST /api/auth/google` - Google OAuth login
-- `GET /api/auth/me` - Get current user
-- `POST /api/auth/logout` - Logout
+## Socket.IO messaging
 
-### Properties
-- `GET /api/properties` - List all properties
-- `GET /api/properties/{id}` - Get property details
-- `POST /api/properties` - Create property (owner/agent only)
-- `POST /api/properties/search` - Search properties
+- Connect with JWT in `auth.token`.
+- Users join `user:{id}` rooms derived server-side.
+- Conversation access is checked before joining `conversation:{id}` or reading messages via REST.
+- File attachments are **not** supported (API rejects `attachment_url`).
 
-### Bookings
-- `POST /api/bookings` - Create booking
-- `GET /api/bookings` - Get user bookings
-- `PUT /api/bookings/{id}/status` - Update booking status
+## Price estimates & recommendations
 
-### Payments
-- `POST /api/payments/create-checkout` - Create Stripe checkout session
-- `GET /api/payments/status/{session_id}` - Check payment status
-- `POST /api/webhook/stripe` - Stripe webhook handler
+These are **similarity / heuristic** features based on listing attributes and booking history — not trained ML models. API responses include `method`, `confidence`, and/or `strategy` fields.
 
-### Messages
-- `GET /api/conversations` - Get user conversations
-- `POST /api/messages` - Send message
-- `GET /api/conversations/{id}/messages` - Get conversation messages
+## Tests
 
-## Running the Application
+```bash
+cd backend
+.venv\Scripts\activate   # or source .venv/bin/activate
+pytest tests -v
+```
 
-1. Start MongoDB (if running locally)
-2. Start the backend server (port 8001)
-3. Start the frontend server (port 3000)
-4. Open http://localhost:3000 in your browser
+Tests use in-memory SQLite and do not require MySQL/Stripe/Google.
 
-## Features Implemented
+Frontend build check:
 
-✅ User authentication with Google OAuth  
-✅ Property listing and search  
-✅ Property creation and management  
-✅ Booking system with time slots  
-✅ Stripe payment integration  
-✅ Real-time messaging  
-✅ Responsive design  
-✅ User profiles and roles  
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+## API overview
+
+| Area | Endpoints |
+|------|-----------|
+| Auth | `POST /api/auth/google`, `GET /api/auth/me`, `POST /api/auth/logout` |
+| Properties | `GET/POST /api/properties`, `GET /api/properties/my`, `GET/PUT/DELETE /api/properties/{id}`, search routes |
+| Bookings | `POST/GET /api/bookings`, `GET /api/bookings/owner`, `PUT /api/bookings/{id}/status` |
+| Payments | `POST /api/payments/create-checkout`, `GET /api/payments/status/{id}`, `POST /api/webhook/stripe` |
+| Messages | `GET /api/conversations`, `GET /api/conversations/{id}/messages`, `POST /api/messages` |
+| Insights | `POST /api/ai/estimate-price`, `GET /api/ai/recommendations`, `/api/analytics/*` |
+
+## Deployment notes
+
+- Set `ENVIRONMENT=production`, a strong `JWT_SECRET`, and explicit `CORS_ORIGINS`.
+- Run `alembic upgrade head` before serving traffic.
+- Serve the React `build/` via CDN/static host; point `REACT_APP_BACKEND_URL` at the API.
+- Configure Stripe webhook endpoint to `/api/webhook/stripe`.
+- Do not enable API docs in production (disabled automatically when `ENVIRONMENT=production`).
+- Rotate any credentials that were ever committed historically (see security notes below).
+
+## Security notes / credential rotation
+
+Tracked sample env files previously contained placeholder values such as `sk_test_emergent` and `yourpassword` — treat them as **non-production placeholders**. If you ever put real Stripe/Google/DB/JWT secrets into git history, **rotate them immediately** in the provider dashboards and purge history if needed.
+
+## Known limitations
+
+- No file upload/attachment storage for chat
+- Profile phone edits are local/Google-synced only (no dedicated profile PATCH persistence UI path beyond Google fields)
+- Geospatial search is limited to address text + stored lat/lng (no PostGIS)
+- Price estimator is heuristic/similarity-based, not a trained model
+- Conversation listing filters participants in application code (indexed `participant_key` helps lookups by pair)
 
 ## License
 
-This project is open source and available under the MIT License.
+MIT
