@@ -23,10 +23,11 @@ ALLOWED_TIME_SLOTS = {
 
 
 class BookingCreate(BaseModel):
+    model_config = {"extra": "ignore"}
+
     property_id: str = Field(..., min_length=3, max_length=64)
     booking_date: str = Field(..., min_length=8, max_length=40)
     time_slot: str = Field(..., min_length=3, max_length=50)
-    deposit_amount: Optional[float] = Field(None, gt=0)
 
     @field_validator("time_slot")
     @classmethod
