@@ -1,6 +1,6 @@
-import React, { useContext, useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { AuthContext } from '../App';
+import { useAuth } from '../context/AuthContext';
 import { Home, Building2, Calendar, MessageCircle, User, LogOut, Menu, X, Calculator, BarChart2 } from 'lucide-react';
 import { Button } from './ui/button';
 import {
@@ -13,7 +13,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 
 const Navbar = () => {
-  const { user, logout } = useContext(AuthContext);
+  const { user, logout } = useAuth();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
