@@ -1,0 +1,144 @@
+"""Payment webhook idempotency and read-only status checks."""
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+from sqlalchemy import select
+
+from app.core.enums import BookingStatus, PaymentStatus
+from app.core.utils import new_id, utcnow
+from app.models.booking import Booking
+from app.models.payment import PaymentTransaction
+from app.services.payment import handle_stripe_webhook, _apply_paid_session
+from tests.conftest import auth_header
+
+
+@pytest.mark.asyncio
+async def test_payment_status_requires_auth(client):
+    res = await client.get("/api/payments/status/cs_test_123")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_payment_status_does_not_mutate(
+    client, db_session, buyer, owner, published_property, tomorrow_iso
+):
+    booking = Booking(
+        id=new_id("book"),
+        property_id=published_property.id,
+        user_id=buyer.id,
+        owner_id=owner.id,
+        booking_date=utcnow(),
+        time_slot="10:00 AM",
+        slot_key=f"{published_property.id}|slot-status",
+        status=BookingStatus.PAYMENT_PENDING.value,
+        payment_status=PaymentStatus.PENDING.value,
+        deposit_amount=1000,
+        created_at=utcnow(),
+        updated_at=utcnow(),
+    )
+    txn = PaymentTransaction(
+        id=new_id("txn"),
+        session_id="cs_test_readonly",
+        booking_id=booking.id,
+        user_id=buyer.id,
+        amount=1000,
+        currency="usd",
+        status="pending",
+        payment_status="pending",
+        created_at=utcnow(),
+        updated_at=utcnow(),
+    )
+    db_session.add_all([booking, txn])
+    await db_session.commit()
+
+    mock_session = MagicMock()
+    mock_session.id = "cs_test_readonly"
+    mock_session.payment_status = "paid"
+    mock_session.status = "complete"
+
+    with patch("app.services.payment.stripe.checkout.Session.retrieve", return_value=mock_session):
+        with patch("app.services.payment._configure_stripe"):
+            res = await client.get(
+                "/api/payments/status/cs_test_readonly",
+                headers=auth_header(buyer),
+            )
+    assert res.status_code == 200
+
+    await db_session.refresh(booking)
+    assert booking.status == BookingStatus.PAYMENT_PENDING.value
+    assert booking.payment_status == PaymentStatus.PENDING.value
+
+
+@pytest.mark.asyncio
+async def test_webhook_idempotent_paid(db_session, buyer, owner, published_property):
+    booking = Booking(
+        id=new_id("book"),
+        property_id=published_property.id,
+        user_id=buyer.id,
+        owner_id=owner.id,
+        booking_date=utcnow(),
+        time_slot="4:00 PM",
+        slot_key=f"{published_property.id}|slot-pay",
+        status=BookingStatus.PAYMENT_PENDING.value,
+        payment_status=PaymentStatus.PENDING.value,
+        deposit_amount=1000,
+        created_at=utcnow(),
+        updated_at=utcnow(),
+    )
+    txn = PaymentTransaction(
+        id=new_id("txn"),
+        session_id="cs_test_pay",
+        booking_id=booking.id,
+        user_id=buyer.id,
+        amount=1000,
+        currency="usd",
+        status="pending",
+        payment_status="pending",
+        created_at=utcnow(),
+        updated_at=utcnow(),
+    )
+    db_session.add_all([booking, txn])
+    await db_session.commit()
+
+    event = {
+        "id": "evt_test_1",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_test_pay",
+                "payment_status": "paid",
+                "status": "complete",
+            }
+        },
+    }
+
+    with patch("app.services.payment.stripe.Webhook.construct_event", return_value=event):
+        with patch("app.services.payment._configure_stripe"):
+            first = await handle_stripe_webhook(db_session, b"{}", "sig")
+            second = await handle_stripe_webhook(db_session, b"{}", "sig")
+
+    assert first["received"] is True
+    assert first["duplicate"] is False
+    assert second["duplicate"] is True
+
+    await db_session.refresh(booking)
+    assert booking.status == BookingStatus.CONFIRMED.value
+    assert booking.payment_status == PaymentStatus.PAID.value
+
+
+@pytest.mark.asyncio
+async def test_webhook_invalid_signature(db_session):
+    import stripe
+
+    from app.core.exceptions import AppError
+
+    with patch(
+        "app.services.payment.stripe.Webhook.construct_event",
+        side_effect=stripe.SignatureVerificationError("bad", "sig"),
+    ):
+        with patch("app.services.payment._configure_stripe"):
+            with pytest.raises(AppError) as exc:
+                await handle_stripe_webhook(db_session, b"{}", "sig")
+            assert exc.value.status_code == 400
