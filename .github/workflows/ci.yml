@@ -65,6 +65,7 @@ jobs:
         env:
           JWT_SECRET: ci-test-secret-key-not-for-production-32
           CORS_ORIGINS: http://localhost:3000
+          DATABASE_URL: mysql+aiomysql://root:testpassword@127.0.0.1:3307/realestate_test
           MYSQL_TEST_URL: mysql+aiomysql://root:testpassword@127.0.0.1:3307/realestate_test
           GOOGLE_CLIENT_ID: test-client.apps.googleusercontent.com
           STRIPE_WEBHOOK_SECRET: whsec_test
