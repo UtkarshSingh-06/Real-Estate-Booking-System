@@ -1,7 +1,12 @@
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { AuthContext } from '../App';
+import { useAuth } from '../context/AuthContext';
+import {
+  getProperties,
+  getRecommendations,
+  realtimeSearch,
+  searchProperties
+} from '../services/api';
 import Navbar from '../components/Navbar';
 import { Card, CardContent, CardFooter } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -11,12 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { MapPin, Bed, Bath, Square, DollarSign, Search, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 const DEBOUNCE_MS = 400;
 
 const PropertiesPage = () => {
-  const { sessionToken } = useContext(AuthContext);
+  const { sessionToken } = useAuth();
   const navigate = useNavigate();
   const [properties, setProperties] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
@@ -33,9 +36,7 @@ const PropertiesPage = () => {
 
   const fetchProperties = useCallback(async () => {
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/properties`, {
-        headers: { Authorization: `Bearer ${sessionToken}` }
-      });
+      const response = await getProperties();
       setProperties(response.data.properties);
     } catch (error) {
       console.error('Error fetching properties:', error);
@@ -43,19 +44,17 @@ const PropertiesPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [sessionToken]);
+  }, []);
 
   const fetchRecommendations = useCallback(async () => {
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/ai/recommendations?limit=6`, {
-        headers: { Authorization: `Bearer ${sessionToken}` }
-      });
+      const response = await getRecommendations({ limit: 6 });
       setRecommendations(response.data.recommendations || []);
       setRecommendationType(response.data.type || '');
     } catch (error) {
       console.error('Error fetching recommendations:', error);
     }
-  }, [sessionToken]);
+  }, []);
 
   useEffect(() => {
     fetchProperties();
@@ -63,25 +62,22 @@ const PropertiesPage = () => {
   }, [fetchProperties, fetchRecommendations]);
 
   const runRealtimeSearch = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (filters.query?.trim()) params.set('q', filters.query.trim());
-    if (filters.min_price) params.set('min_price', filters.min_price);
-    if (filters.max_price) params.set('max_price', filters.max_price);
-    if (filters.property_type) params.set('property_type', filters.property_type);
-    if (filters.bedrooms) params.set('bedrooms', filters.bedrooms);
-    if (filters.bathrooms) params.set('bathrooms', filters.bathrooms);
+    const params = {};
+    if (filters.query?.trim()) params.q = filters.query.trim();
+    if (filters.min_price) params.min_price = filters.min_price;
+    if (filters.max_price) params.max_price = filters.max_price;
+    if (filters.property_type) params.property_type = filters.property_type;
+    if (filters.bedrooms) params.bedrooms = filters.bedrooms;
+    if (filters.bathrooms) params.bathrooms = filters.bathrooms;
     try {
-      const response = await axios.get(
-        `${BACKEND_URL}/api/properties/search/realtime?${params.toString()}`,
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
+      const response = await realtimeSearch(params);
       setProperties(response.data.properties);
     } catch (error) {
       console.error('Realtime search error:', error);
     } finally {
       setLoading(false);
     }
-  }, [sessionToken, filters]);
+  }, [filters]);
 
   const hasFilters = filters.query?.trim() || filters.min_price || filters.max_price || filters.property_type || filters.bedrooms || filters.bathrooms;
   useEffect(() => {
@@ -101,11 +97,7 @@ const PropertiesPage = () => {
       if (filters.bedrooms) searchParams.bedrooms = parseInt(filters.bedrooms);
       if (filters.bathrooms) searchParams.bathrooms = parseInt(filters.bathrooms);
 
-      const response = await axios.post(
-        `${BACKEND_URL}/api/properties/search`,
-        searchParams,
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
+      const response = await searchProperties(searchParams);
       setProperties(response.data.properties);
     } catch (error) {
       console.error('Error searching properties:', error);
