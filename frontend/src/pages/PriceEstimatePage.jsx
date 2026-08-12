@@ -1,6 +1,6 @@
-import React, { useState, useContext } from 'react';
-import axios from 'axios';
-import { AuthContext } from '../App';
+import React, { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { estimatePrice } from '../services/api';
 import Navbar from '../components/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -10,8 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { DollarSign, Calculator, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 const PROPERTY_TYPES = [
   { value: 'apartment', label: 'Apartment' },
   { value: 'house', label: 'House' },
@@ -20,7 +18,7 @@ const PROPERTY_TYPES = [
 ];
 
 const PriceEstimatePage = () => {
-  const { sessionToken } = useContext(AuthContext);
+  useAuth();
   const [inputs, setInputs] = useState({
     property_type: 'apartment',
     area_sqft: '',
@@ -41,17 +39,13 @@ const PriceEstimatePage = () => {
     setLoading(true);
     setResult(null);
     try {
-      const response = await axios.post(
-        `${BACKEND_URL}/api/ai/estimate-price`,
-        {
-          property_type: inputs.property_type,
-          area_sqft: area,
-          bedrooms: parseInt(inputs.bedrooms) || 2,
-          bathrooms: parseInt(inputs.bathrooms) || 2,
-          amenities: inputs.amenities
-        },
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
+      const response = await estimatePrice({
+        property_type: inputs.property_type,
+        area_sqft: area,
+        bedrooms: parseInt(inputs.bedrooms) || 2,
+        bathrooms: parseInt(inputs.bathrooms) || 2,
+        amenities: inputs.amenities
+      });
       setResult(response.data);
       toast.success('Price estimate ready');
     } catch (error) {
@@ -68,10 +62,10 @@ const PriceEstimatePage = () => {
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center gap-2 mb-6">
           <Sparkles className="h-8 w-8 text-[hsl(var(--primary))]" />
-          <h1 className="text-3xl font-bold">AI Price Estimation</h1>
+          <h1 className="text-3xl font-bold">Smart Price Estimate</h1>
         </div>
         <p className="text-gray-600 mb-8">
-          Get an estimated market value based on property type, size, and features. Our model uses real listing data for accurate estimates.
+          Get a similarity-based estimate using comparable listings, property type, size, and features.
         </p>
 
         <Card className="glass border-0 shadow-xl mb-8">
@@ -150,7 +144,7 @@ const PriceEstimatePage = () => {
                 className="w-full bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/90"
                 disabled={loading}
               >
-                {loading ? 'Estimating...' : 'Get AI Estimate'}
+                {loading ? 'Estimating...' : 'Get Price Estimate'}
               </Button>
             </form>
           </CardContent>
@@ -173,6 +167,12 @@ const PriceEstimatePage = () => {
                   </p>
                 )}
               </div>
+              {(result.method || result.confidence != null) && (
+                <div className="mt-4 text-sm text-muted-foreground space-y-1">
+                  {result.method && <p>Method: {result.method}</p>}
+                  {result.confidence != null && <p>Confidence: {result.confidence}</p>}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
