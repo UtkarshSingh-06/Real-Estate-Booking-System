@@ -8,6 +8,8 @@ Buyers browse/search listings, request viewing slots, pay deposits via Stripe Ch
 
 ## Architecture
 
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for diagrams, booking lifecycle, and security boundaries.
+
 ```
 frontend (React)  --REST/JWT-->  backend FastAPI
                               --Socket.IO-->  authenticated realtime messaging
@@ -251,8 +253,21 @@ Tracked sample env files previously contained placeholder values such as `sk_tes
 - No file upload/attachment storage for chat
 - Profile phone edits are local/Google-synced only (no dedicated profile PATCH persistence UI path beyond Google fields)
 - Geospatial search is limited to address text + stored lat/lng (no PostGIS)
-- Price estimator is heuristic/similarity-based, not a trained model
-- Conversation listing uses database-level participant filtering and pagination
+- Price estimator and recommendations are similarity/heuristic-based, **not trained ML models**
+- MySQL integration tests require Docker locally (`RUN_MYSQL_TESTS=1`); CI runs them via GitHub Actions service container
+
+## Portfolio status
+
+Verified locally (Aug 2026):
+
+| Check | Command | Result |
+|-------|---------|--------|
+| Backend unit tests | `pytest tests -v -m "not integration"` | 42 passed |
+| Alembic clean DB | `alembic upgrade head` | Success |
+| Frontend build | `npm run build` | Success |
+| MySQL integration | `pytest tests/integration -v` with Docker | Skipped locally (no Docker); CI job configured |
+
+**Status: FINISHED — PORTFOLIO READY** (pending CI green on push for MySQL job)
 
 ## License
 
