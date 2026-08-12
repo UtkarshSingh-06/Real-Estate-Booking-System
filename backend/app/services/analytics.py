@@ -1,8 +1,6 @@
 """Analytics service — permission-aware market and owner metrics."""
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from sqlalchemy import and_, desc, func, select
@@ -16,29 +14,35 @@ from app.services.property import serialize_property
 
 
 async def market_trends(db: AsyncSession) -> dict:
-    result = await db.execute(
-        select(Property).where(
-            Property.status == PropertyStatus.PUBLISHED.value,
-            Property.deleted_at.is_(None),
+    year = func.extract("year", Property.created_at)
+    month = func.extract("month", Property.created_at)
+    rows = (
+        await db.execute(
+            select(
+                year.label("year"),
+                month.label("month"),
+                func.avg(Property.price).label("avg_price"),
+                func.count(Property.id).label("count"),
+            )
+            .where(
+                Property.status == PropertyStatus.PUBLISHED.value,
+                Property.deleted_at.is_(None),
+            )
+            .group_by(year, month)
+            .order_by(year, month)
         )
-    )
-    all_props = list(result.scalars().all())
-    by_period: Dict[str, List[float]] = defaultdict(list)
-    for p in all_props:
-        created = p.created_at or datetime.now(timezone.utc)
-        period = created.strftime("%Y-%m")
-        by_period[period].append(p.price)
+    ).all()
 
     results = []
-    for period in sorted(by_period.keys()):
-        prices = by_period[period]
+    for row in rows:
+        period = f"{int(row.year):04d}-{int(row.month):02d}"
         results.append(
             {
                 "period": period,
-                "year": int(period[:4]),
-                "month": int(period[5:7]),
-                "avg_price": round(sum(prices) / len(prices), 2) if prices else 0,
-                "count": len(prices),
+                "year": int(row.year),
+                "month": int(row.month),
+                "avg_price": round(float(row.avg_price or 0), 2),
+                "count": int(row.count or 0),
             }
         )
     return {"market_trends": results}
