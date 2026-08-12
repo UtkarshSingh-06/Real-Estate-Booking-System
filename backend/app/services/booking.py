@@ -21,6 +21,7 @@ from app.core.exceptions import AppError, ConflictError, ForbiddenError, NotFoun
 from app.core.utils import ensure_utc, make_slot_key, new_id, to_date, utcnow
 from app.models.booking import Booking
 from app.models.property import Property
+from app.schemas.booking import BookingCreate
 from app.services.deposit import calculate_deposit
 from app.schemas.user import UserOut
 
