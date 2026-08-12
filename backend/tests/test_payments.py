@@ -129,6 +129,78 @@ async def test_webhook_idempotent_paid(db_session, buyer, owner, published_prope
 
 
 @pytest.mark.asyncio
+async def test_webhook_concurrent_duplicate_delivery(engine, buyer, owner, published_property):
+    """Two simultaneous webhook deliveries must not double-apply payment state."""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as setup:
+        booking = Booking(
+            id=new_id("book"),
+            property_id=published_property.id,
+            user_id=buyer.id,
+            owner_id=owner.id,
+            booking_date=utcnow(),
+            time_slot="5:00 PM",
+            slot_key=f"{published_property.id}|slot-concurrent",
+            status=BookingStatus.PAYMENT_PENDING.value,
+            payment_status=PaymentStatus.PENDING.value,
+            deposit_amount=1000,
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+        txn = PaymentTransaction(
+            id=new_id("txn"),
+            session_id="cs_test_concurrent",
+            booking_id=booking.id,
+            user_id=buyer.id,
+            amount=1000,
+            currency="usd",
+            status="pending",
+            payment_status="pending",
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+        setup.add_all([booking, txn])
+        await setup.commit()
+        booking_id = booking.id
+
+    event = {
+        "id": "evt_concurrent_1",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_test_concurrent",
+                "payment_status": "paid",
+                "status": "complete",
+            }
+        },
+    }
+
+    async def deliver():
+        async with Session() as session:
+            with patch("app.services.payment.stripe.Webhook.construct_event", return_value=event):
+                with patch("app.services.payment._configure_stripe"):
+                    result = await handle_stripe_webhook(session, b"{}", "sig")
+                    await session.commit()
+                    return result
+
+    results = await asyncio.gather(deliver(), deliver(), return_exceptions=True)
+    dict_results = [r for r in results if isinstance(r, dict)]
+    assert dict_results, f"expected webhook handlers to return results, got {results!r}"
+    assert all(r.get("received") for r in dict_results)
+    assert sum(1 for r in dict_results if r.get("duplicate")) == 1
+    assert sum(1 for r in dict_results if not r.get("duplicate")) == 1
+
+    async with Session() as verify:
+        refreshed = await verify.get(Booking, booking_id)
+        assert refreshed.status == BookingStatus.CONFIRMED.value
+        assert refreshed.payment_status == PaymentStatus.PAID.value
+
+
+@pytest.mark.asyncio
 async def test_webhook_invalid_signature(db_session):
     import stripe
 
