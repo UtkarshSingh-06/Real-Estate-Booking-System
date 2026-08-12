@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   createBooking,
-  createCheckout,
   getProperty,
   getRecommendations,
   sendMessage
@@ -28,7 +27,6 @@ const PropertyDetail = () => {
   const [bookingData, setBookingData] = useState({
     booking_date: '',
     time_slot: '10:00 AM',
-    deposit_amount: 0
   });
   const [bookingOpen, setBookingOpen] = useState(false);
   const [messageOpen, setMessageOpen] = useState(false);
@@ -50,10 +48,6 @@ const PropertyDetail = () => {
     try {
       const response = await getProperty(id);
       setProperty(response.data);
-      setBookingData((current) => ({
-        ...current,
-        deposit_amount: response.data.price * 0.1
-      }));
     } catch (error) {
       console.error('Error fetching property:', error);
       toast.error('Failed to load property');
@@ -73,21 +67,15 @@ const PropertyDetail = () => {
         ...bookingData,
         property_id: property?.id || id
       });
-      const bookingId = response.data.id;
-      toast.success('Booking requested successfully');
+      toast.success(
+        `Viewing requested. Deposit: $${response.data.deposit_amount?.toLocaleString() ?? '—'} (pay after owner approval).`
+      );
       setBookingOpen(false);
-
-      try {
-        const paymentResponse = await createCheckout(bookingId, window.location.origin);
-        window.location.href = paymentResponse.data.url;
-      } catch (paymentError) {
-        console.error('Error creating payment checkout:', paymentError);
-        toast.info('Booking requested. You can pay the deposit from My Bookings.');
-        navigate('/bookings');
-      }
+      navigate('/bookings');
     } catch (error) {
       console.error('Error creating booking:', error);
-      toast.error('Failed to create booking');
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to create booking');
     }
   };
 
@@ -247,9 +235,9 @@ const PropertyDetail = () => {
                   <p className="text-gray-600">Schedule a visit to this property</p>
                   <div className="space-y-3">
                     <div className="bg-blue-50 p-4 rounded-lg">
-                      <div className="text-sm text-gray-600">Deposit Required</div>
+                      <div className="text-sm text-gray-600">Estimated deposit ({property.deposit_policy || '10% of listing price'})</div>
                       <div className="text-2xl font-bold text-[hsl(var(--primary))]">
-                        ${(property.price * 0.1).toLocaleString()}
+                        ${(property.estimated_deposit ?? property.price * 0.1).toLocaleString()}
                       </div>
                     </div>
                   </div>
@@ -291,11 +279,16 @@ const PropertyDetail = () => {
                           </select>
                         </div>
                         <div className="bg-blue-50 p-4 rounded-lg">
-                          <div className="text-sm text-gray-600">Deposit Amount</div>
-                          <div className="text-xl font-bold">${bookingData.deposit_amount.toLocaleString()}</div>
+                          <div className="text-sm text-gray-600">Estimated deposit (set by server after request)</div>
+                          <div className="text-xl font-bold">
+                            ${(property?.estimated_deposit ?? 0).toLocaleString()}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Payment is available after the owner approves your request.
+                          </p>
                         </div>
                         <Button className="w-full" onClick={handleBooking} data-testid="confirm-booking-btn">
-                          Proceed to Payment
+                          Request Viewing
                         </Button>
                       </div>
                     </DialogContent>
