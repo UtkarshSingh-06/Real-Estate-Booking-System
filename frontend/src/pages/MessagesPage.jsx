@@ -1,7 +1,12 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
-import { AuthContext } from '../App';
+import { useAuth } from '../context/AuthContext';
+import {
+  getBackendUrl,
+  getConversations,
+  getMessages,
+  sendMessage as sendMessageRequest
+} from '../services/api';
 import Navbar from '../components/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -10,43 +15,42 @@ import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { MessageCircle, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 const MessagesPage = () => {
-  const { sessionToken, user } = useContext(AuthContext);
+  const { sessionToken, user } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
-  const [socket, setSocket] = useState(null);
   const messagesEndRef = useRef(null);
+  const selectedConversationRef = useRef(null);
+
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
 
   useEffect(() => {
     fetchConversations();
     
     // Initialize Socket.IO
-    const socketUrl = BACKEND_URL.replace('/api', '').replace('https://', 'wss://').replace('http://', 'ws://');
-    const newSocket = io(socketUrl, {
-      transports: ['websocket', 'polling']
+    const newSocket = io(getBackendUrl(), {
+      transports: ['websocket', 'polling'],
+      auth: { token: sessionToken }
     });
 
     newSocket.on('connect', () => {
       console.log('Socket connected');
-      newSocket.emit('join_room', { user_id: user.id });
     });
 
     newSocket.on('new_message', (message) => {
-      if (selectedConversation && message.conversation_id === selectedConversation.id) {
+      if (message.conversation_id === selectedConversationRef.current?.id) {
         setMessages((prev) => [...prev, message]);
       }
     });
 
-    setSocket(newSocket);
-
     return () => {
       newSocket.disconnect();
     };
-  }, []);
+  }, [sessionToken]);
 
   useEffect(() => {
     if (selectedConversation) {
@@ -60,9 +64,7 @@ const MessagesPage = () => {
 
   const fetchConversations = async () => {
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/conversations`, {
-        headers: { Authorization: `Bearer ${sessionToken}` }
-      });
+      const response = await getConversations();
       setConversations(response.data.conversations);
       if (response.data.conversations.length > 0 && !selectedConversation) {
         setSelectedConversation(response.data.conversations[0]);
@@ -74,10 +76,7 @@ const MessagesPage = () => {
 
   const fetchMessages = async (conversationId) => {
     try {
-      const response = await axios.get(
-        `${BACKEND_URL}/api/conversations/${conversationId}/messages`,
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
+      const response = await getMessages(conversationId);
       setMessages(response.data.messages);
     } catch (error) {
       console.error('Error fetching messages:', error);
@@ -90,15 +89,11 @@ const MessagesPage = () => {
     const receiverId = selectedConversation.participants.find(id => id !== user.id);
 
     try {
-      const response = await axios.post(
-        `${BACKEND_URL}/api/messages`,
-        {
-          receiver_id: receiverId,
-          property_id: selectedConversation.property_id,
-          message: newMessage
-        },
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
+      const response = await sendMessageRequest({
+        receiver_id: receiverId,
+        property_id: selectedConversation.property_id,
+        message: newMessage
+      });
 
       const sentMessage = {
         id: response.data.id,
@@ -111,11 +106,6 @@ const MessagesPage = () => {
 
       setMessages((prev) => [...prev, sentMessage]);
       setNewMessage('');
-      
-      // Emit via socket
-      if (socket) {
-        socket.emit('send_message', sentMessage);
-      }
     } catch (error) {
       console.error('Error sending message:', error);
       toast.error('Failed to send message');
