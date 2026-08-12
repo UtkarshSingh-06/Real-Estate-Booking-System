@@ -1,7 +1,13 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { AuthContext } from '../App';
+import { useAuth } from '../context/AuthContext';
+import {
+  createBooking,
+  createCheckout,
+  getProperty,
+  getRecommendations,
+  sendMessage
+} from '../services/api';
 import Navbar from '../components/Navbar';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -13,11 +19,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 const PropertyDetail = () => {
   const { id } = useParams();
-  const { sessionToken, user } = useContext(AuthContext);
+  const { sessionToken, user } = useAuth();
   const navigate = useNavigate();
   const [property, setProperty] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -37,18 +41,19 @@ const PropertyDetail = () => {
 
   useEffect(() => {
     if (!id || !sessionToken) return;
-    axios.get(`${BACKEND_URL}/api/ai/recommendations?property_id=${id}&limit=3`, {
-      headers: { Authorization: `Bearer ${sessionToken}` }
-    }).then((res) => setSimilarProperties(res.data.recommendations || [])).catch(() => {});
+    getRecommendations({ property_id: id, limit: 3 })
+      .then((res) => setSimilarProperties(res.data.recommendations || []))
+      .catch(() => {});
   }, [id, sessionToken]);
 
   const fetchProperty = async () => {
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/properties/${id}`, {
-        headers: { Authorization: `Bearer ${sessionToken}` }
-      });
+      const response = await getProperty(id);
       setProperty(response.data);
-      setBookingData({ ...bookingData, deposit_amount: response.data.price * 0.1 });
+      setBookingData((current) => ({
+        ...current,
+        deposit_amount: response.data.price * 0.1
+      }));
     } catch (error) {
       console.error('Error fetching property:', error);
       toast.error('Failed to load property');
@@ -64,26 +69,22 @@ const PropertyDetail = () => {
     }
 
     try {
-      const response = await axios.post(
-        `${BACKEND_URL}/api/bookings`,
-        bookingData,
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
+      const response = await createBooking({
+        ...bookingData,
+        property_id: property?.id || id
+      });
       const bookingId = response.data.id;
-      toast.success('Booking created! Proceeding to payment...');
-      
-      // Create payment checkout
-      const paymentResponse = await axios.post(
-        `${BACKEND_URL}/api/payments/create-checkout`,
-        {
-          booking_id: bookingId,
-          origin_url: window.location.origin
-        },
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
-      
-      // Redirect to Stripe
-      window.location.href = paymentResponse.data.url;
+      toast.success('Booking requested successfully');
+      setBookingOpen(false);
+
+      try {
+        const paymentResponse = await createCheckout(bookingId, window.location.origin);
+        window.location.href = paymentResponse.data.url;
+      } catch (paymentError) {
+        console.error('Error creating payment checkout:', paymentError);
+        toast.info('Booking requested. You can pay the deposit from My Bookings.');
+        navigate('/bookings');
+      }
     } catch (error) {
       console.error('Error creating booking:', error);
       toast.error('Failed to create booking');
@@ -97,15 +98,11 @@ const PropertyDetail = () => {
     }
 
     try {
-      await axios.post(
-        `${BACKEND_URL}/api/messages`,
-        {
-          receiver_id: property.owner_id,
-          property_id: property.id,
-          message: message
-        },
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
+      await sendMessage({
+        receiver_id: property.owner_id,
+        property_id: property.id,
+        message: message
+      });
       toast.success('Message sent!');
       setMessageOpen(false);
       setMessage('');
