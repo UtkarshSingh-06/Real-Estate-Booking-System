@@ -41,7 +41,8 @@ backend/
 - Property CRUD with soft-archive (historical bookings preserved)
 - Search/filter/sort/pagination for listings
 - Booking state machine with slot uniqueness + expiration
-- Stripe Checkout + **verified, idempotent webhooks** (authoritative payment state)
+- **Server-calculated deposits** (default 10% of listing price; client cannot override)
+- Stripe Checkout only after owner approval (`payment_pending` status)
 - Authenticated Socket.IO messaging (identity from JWT, not client `user_id`)
 - Similarity-based price estimator and recommendations (honestly labeled; not ML)
 - Market/owner analytics dashboard
@@ -108,11 +109,13 @@ pip install -r requirements.txt
 copy .env.example .env   # then edit secrets
 ```
 
-Run migrations (preferred) or rely on startup `create_all` in development:
+Run migrations (required in production/staging):
 
 ```bash
 alembic upgrade head
 ```
+
+In local development/test, the app may still call `create_all()` on startup when `ENVIRONMENT` is not `production` or `staging`.
 
 Start API + Socket.IO:
 
@@ -152,6 +155,8 @@ State machine:
 `approved → payment_pending` (automatic on owner approve)  
 `payment_pending → confirmed` (via Stripe webhook) / `cancelled` / `expired`
 
+Buyers **cannot** start Stripe checkout until the owner has approved and the booking is `payment_pending`. Deposit amounts are computed on the server from the listing price (default 10%).
+
 - Availability is checked under a property row lock.
 - Active holds use a unique `slot_key`; cancelled/rejected/expired clear it so the slot frees.
 - Unpaid requests expire after `BOOKING_REQUEST_EXPIRE_HOURS` (default 48).
@@ -182,13 +187,32 @@ These are **similarity / heuristic** features based on listing attributes and bo
 
 ## Tests
 
+### Unit tests (SQLite, fast)
+
 ```bash
 cd backend
 .venv\Scripts\activate   # or source .venv/bin/activate
-pytest tests -v
+pytest tests -v -m "not integration"
 ```
 
-Tests use in-memory SQLite and do not require MySQL/Stripe/Google.
+### MySQL integration tests
+
+Start test MySQL (Docker):
+
+```bash
+docker compose -f docker-compose.test.yml up -d
+```
+
+Then:
+
+```bash
+cd backend
+export RUN_MYSQL_TESTS=1   # PowerShell: $env:RUN_MYSQL_TESTS="1"
+export MYSQL_TEST_URL=mysql+aiomysql://root:testpassword@127.0.0.1:3307/realestate_test
+pytest tests/integration -v
+```
+
+Unit tests use in-memory SQLite and do not require MySQL/Stripe/Google.
 
 Frontend build check:
 
@@ -228,7 +252,7 @@ Tracked sample env files previously contained placeholder values such as `sk_tes
 - Profile phone edits are local/Google-synced only (no dedicated profile PATCH persistence UI path beyond Google fields)
 - Geospatial search is limited to address text + stored lat/lng (no PostGIS)
 - Price estimator is heuristic/similarity-based, not a trained model
-- Conversation listing filters participants in application code (indexed `participant_key` helps lookups by pair)
+- Conversation listing uses database-level participant filtering and pagination
 
 ## License
 
