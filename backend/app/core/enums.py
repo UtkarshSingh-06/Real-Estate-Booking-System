@@ -76,15 +76,12 @@ ALLOWED_BOOKING_TRANSITIONS: dict[str, set[str]] = {
         BookingStatus.REJECTED.value,
         BookingStatus.CANCELLED.value,
         BookingStatus.EXPIRED.value,
-        BookingStatus.PAYMENT_PENDING.value,  # allow direct checkout path
     },
     "pending": {  # legacy
         BookingStatus.APPROVED.value,
         BookingStatus.REJECTED.value,
         BookingStatus.CANCELLED.value,
         BookingStatus.EXPIRED.value,
-        BookingStatus.PAYMENT_PENDING.value,
-        BookingStatus.CONFIRMED.value,  # legacy owner confirm
     },
     BookingStatus.APPROVED.value: {
         BookingStatus.PAYMENT_PENDING.value,
