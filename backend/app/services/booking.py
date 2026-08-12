@@ -21,7 +21,7 @@ from app.core.exceptions import AppError, ConflictError, ForbiddenError, NotFoun
 from app.core.utils import ensure_utc, make_slot_key, new_id, to_date, utcnow
 from app.models.booking import Booking
 from app.models.property import Property
-from app.schemas.booking import BookingCreate, BookingOut
+from app.services.deposit import calculate_deposit
 from app.schemas.user import UserOut
 
 logger = logging.getLogger(__name__)
@@ -117,11 +117,7 @@ async def create_booking(db: AsyncSession, user: UserOut, data: BookingCreate) -
     if conflict.scalar_one_or_none():
         raise ConflictError("This time slot is already booked")
 
-    deposit = data.deposit_amount
-    if deposit is None:
-        deposit = round(prop.price * settings.default_deposit_percent, 2)
-    if deposit <= 0:
-        raise AppError("Deposit amount must be positive", status_code=400)
+    deposit = calculate_deposit(prop.price, settings)
 
     expires_at = utcnow() + timedelta(hours=settings.booking_request_expire_hours)
     booking = Booking(
@@ -146,7 +142,13 @@ async def create_booking(db: AsyncSession, user: UserOut, data: BookingCreate) -
         await db.rollback()
         raise ConflictError("This time slot is already booked") from exc
 
-    return {"id": booking.id, "message": "Booking request created", "status": booking.status}
+    return {
+        "id": booking.id,
+        "message": "Booking request created",
+        "status": booking.status,
+        "deposit_amount": booking.deposit_amount,
+        "deposit_policy": f"{int(settings.default_deposit_percent * 100)}% of listing price",
+    }
 
 
 async def list_user_bookings(
