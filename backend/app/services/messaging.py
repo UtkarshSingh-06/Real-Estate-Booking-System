@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Optional
 
-from sqlalchemy import and_, asc, desc, func, or_, select
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ForbiddenError, NotFoundError
@@ -35,6 +35,14 @@ def participant_key(user_a: str, user_b: str, property_id: Optional[str] = None)
     parts = sorted([user_a, user_b])
     prop = property_id or "_"
     return f"{parts[0]}|{parts[1]}|{prop}"
+
+
+def _user_conversation_filter(user_id: str):
+    """Database-level filter: participant_key encodes sorted user ids."""
+    return or_(
+        Conversation.participant_key.like(f"{user_id}|%"),
+        Conversation.participant_key.like(f"%|{user_id}|%"),
+    )
 
 
 def serialize_conversation(conv: Conversation) -> dict:
@@ -68,20 +76,17 @@ def user_in_conversation(conv: Conversation, user_id: str) -> bool:
 async def list_conversations(
     db: AsyncSession, user: UserOut, page: int = 1, page_size: int = 20
 ) -> tuple[list[dict], int]:
-    # Filter via participant_key prefix / JSON containment approximation:
-    # load candidate rows matching user id substring then filter exactly.
-    # For correctness we filter in Python after indexed time ordering with a
-    # reasonable window, then paginate — participant_key includes user ids.
+    base = select(Conversation).where(_user_conversation_filter(user.id))
+    total = int(await db.scalar(select(func.count()).select_from(base.subquery())) or 0)
     result = await db.execute(
-        select(Conversation).order_by(desc(Conversation.last_message_at), desc(Conversation.created_at))
+        base.order_by(
+            desc(Conversation.last_message_at),
+            desc(Conversation.created_at),
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
-    all_convs = [
-        c for c in result.scalars().all() if user_in_conversation(c, user.id)
-    ]
-    total = len(all_convs)
-    start = (page - 1) * page_size
-    page_items = all_convs[start : start + page_size]
-    return [serialize_conversation(c) for c in page_items], total
+    return [serialize_conversation(c) for c in result.scalars().all()], total
 
 
 async def get_conversation_or_404(db: AsyncSession, conversation_id: str) -> Conversation:
