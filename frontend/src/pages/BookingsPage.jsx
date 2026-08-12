@@ -1,6 +1,11 @@
-import React, { useState, useEffect, useContext } from 'react';
-import axios from 'axios';
-import { AuthContext } from '../App';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import {
+  createCheckout,
+  getBookings,
+  getOwnerBookings,
+  updateBookingStatus as updateBookingStatusRequest
+} from '../services/api';
 import Navbar from '../components/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -9,10 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Calendar, MapPin, Clock, DollarSign, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 const BookingsPage = () => {
-  const { sessionToken, user } = useContext(AuthContext);
+  const { user } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [ownerBookings, setOwnerBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,15 +26,11 @@ const BookingsPage = () => {
 
   const fetchBookings = async () => {
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/bookings`, {
-        headers: { Authorization: `Bearer ${sessionToken}` }
-      });
+      const response = await getBookings();
       setBookings(response.data.bookings);
 
       if (['owner', 'agent', 'admin'].includes(user.role)) {
-        const ownerResponse = await axios.get(`${BACKEND_URL}/api/bookings/owner`, {
-          headers: { Authorization: `Bearer ${sessionToken}` }
-        });
+        const ownerResponse = await getOwnerBookings();
         setOwnerBookings(ownerResponse.data.bookings);
       }
     } catch (error) {
@@ -44,11 +43,7 @@ const BookingsPage = () => {
 
   const updateBookingStatus = async (bookingId, status) => {
     try {
-      await axios.put(
-        `${BACKEND_URL}/api/bookings/${bookingId}/status?status=${status}`,
-        {},
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
+      await updateBookingStatusRequest(bookingId, status);
       toast.success(`Booking ${status}`);
       fetchBookings();
     } catch (error) {
@@ -57,14 +52,29 @@ const BookingsPage = () => {
     }
   };
 
+  const handlePayDeposit = async (bookingId) => {
+    try {
+      const response = await createCheckout(bookingId, window.location.origin);
+      window.location.href = response.data.url;
+    } catch (error) {
+      console.error('Error creating checkout:', error);
+      toast.error('Failed to start deposit payment');
+    }
+  };
+
   const getStatusIcon = (status) => {
     switch (status) {
       case 'confirmed':
         return <CheckCircle className="h-5 w-5 text-green-600" />;
+      case 'approved':
+      case 'payment_pending':
+        return <AlertCircle className="h-5 w-5 text-blue-600" />;
       case 'rejected':
+      case 'expired':
         return <XCircle className="h-5 w-5 text-red-600" />;
       case 'cancelled':
         return <XCircle className="h-5 w-5 text-gray-600" />;
+      case 'requested':
       default:
         return <AlertCircle className="h-5 w-5 text-yellow-600" />;
     }
@@ -74,10 +84,15 @@ const BookingsPage = () => {
     switch (status) {
       case 'confirmed':
         return 'bg-green-100 text-green-800';
+      case 'approved':
+      case 'payment_pending':
+        return 'bg-blue-100 text-blue-800';
       case 'rejected':
+      case 'expired':
         return 'bg-red-100 text-red-800';
       case 'cancelled':
         return 'bg-gray-100 text-gray-800';
+      case 'requested':
       default:
         return 'bg-yellow-100 text-yellow-800';
     }
@@ -128,7 +143,7 @@ const BookingsPage = () => {
           </Badge>
         </div>
 
-        {isOwner && booking.status === 'pending' && (
+        {isOwner && booking.status === 'requested' && (
           <div className="flex gap-3 pt-3 border-t">
             <Button
               className="flex-1 bg-green-600 hover:bg-green-700"
@@ -146,6 +161,18 @@ const BookingsPage = () => {
             >
               <XCircle className="mr-2 h-4 w-4" />
               Reject
+            </Button>
+          </div>
+        )}
+        {!isOwner && ['approved', 'payment_pending'].includes(booking.status) && booking.payment_status !== 'paid' && (
+          <div className="pt-3 border-t">
+            <Button
+              className="w-full"
+              onClick={() => handlePayDeposit(booking.id)}
+              data-testid={`pay-deposit-${booking.id}`}
+            >
+              <DollarSign className="mr-2 h-4 w-4" />
+              Pay deposit
             </Button>
           </div>
         )}
