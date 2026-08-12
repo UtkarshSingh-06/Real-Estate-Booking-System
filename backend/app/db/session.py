@@ -41,7 +41,19 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Create tables if they do not exist (dev convenience; prefer Alembic in prod)."""
+    """Create tables in local/test only. Production must use Alembic migrations."""
+    import logging
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    if settings.environment.lower() in ("production", "staging"):
+        logging.getLogger(__name__).info(
+            "Skipping create_all in %s — run `alembic upgrade head` before serving traffic",
+            settings.environment,
+        )
+        return
+
     from app.db import models  # noqa: F401
     from app.db.base import Base
 
