@@ -147,11 +147,11 @@ const BookingsPage = () => {
           <div className="flex gap-3 pt-3 border-t">
             <Button
               className="flex-1 bg-green-600 hover:bg-green-700"
-              onClick={() => updateBookingStatus(booking.id, 'confirmed')}
+              onClick={() => updateBookingStatus(booking.id, 'approved')}
               data-testid={`confirm-booking-${booking.id}`}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
-              Confirm
+              Approve
             </Button>
             <Button
               variant="destructive"
@@ -164,7 +164,7 @@ const BookingsPage = () => {
             </Button>
           </div>
         )}
-        {!isOwner && ['approved', 'payment_pending'].includes(booking.status) && booking.payment_status !== 'paid' && (
+        {!isOwner && booking.status === 'payment_pending' && booking.payment_status !== 'paid' && (
           <div className="pt-3 border-t">
             <Button
               className="w-full"
