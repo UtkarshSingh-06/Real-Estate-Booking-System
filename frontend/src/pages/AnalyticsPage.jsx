@@ -1,16 +1,14 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { AuthContext } from '../App';
+import { useAuth } from '../context/AuthContext';
+import { getAnalyticsDashboard, getMarketTrends, getBuyerBehavior } from '../services/api';
 import Navbar from '../components/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { BarChart2, TrendingUp, Home, Calendar, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 const AnalyticsPage = () => {
-  const { sessionToken } = useContext(AuthContext);
+  useAuth();
   const navigate = useNavigate();
   const [dashboard, setDashboard] = useState(null);
   const [marketTrends, setMarketTrends] = useState([]);
@@ -21,9 +19,9 @@ const AnalyticsPage = () => {
     const fetch = async () => {
       try {
         const [dashRes, trendsRes, behaviorRes] = await Promise.all([
-          axios.get(`${BACKEND_URL}/api/analytics/dashboard`, { headers: { Authorization: `Bearer ${sessionToken}` } }),
-          axios.get(`${BACKEND_URL}/api/analytics/market-trends`, { headers: { Authorization: `Bearer ${sessionToken}` } }),
-          axios.get(`${BACKEND_URL}/api/analytics/buyer-behavior`, { headers: { Authorization: `Bearer ${sessionToken}` } })
+          getAnalyticsDashboard(),
+          getMarketTrends(),
+          getBuyerBehavior()
         ]);
         setDashboard(dashRes.data);
         setMarketTrends(trendsRes.data.market_trends || []);
@@ -36,7 +34,7 @@ const AnalyticsPage = () => {
       }
     };
     fetch();
-  }, [sessionToken]);
+  }, []);
 
   if (loading) {
     return (
@@ -60,7 +58,7 @@ const AnalyticsPage = () => {
           <h1 className="text-3xl font-bold">Market Insights & Analytics</h1>
         </div>
         <p className="text-gray-600 mb-8">
-          Predictive analytics for home buyer behavior and market trends.
+          Market insights based on listing and booking activity.
         </p>
 
         {/* Dashboard summary */}
