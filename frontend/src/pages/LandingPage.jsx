@@ -1,12 +1,12 @@
-import React, { useContext } from 'react';
-import { AuthContext } from '../App';
+import React from 'react';
+import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Building2, MapPin, Calendar, MessageCircle, Shield, Star } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 
 const LandingPage = () => {
-  const { user, login } = useContext(AuthContext);
+  const { user, login } = useAuth();
   const navigate = useNavigate();
 
   React.useEffect(() => {
