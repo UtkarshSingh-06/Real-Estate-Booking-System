@@ -1,21 +1,21 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import axios from 'axios';
-import { AuthContext } from '../App';
+import { useAuth } from '../context/AuthContext';
+import { getPaymentStatus } from '../services/api';
 import Navbar from '../components/Navbar';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { CheckCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 const BookingSuccess = () => {
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('session_id');
-  const { sessionToken } = useContext(AuthContext);
+  useAuth();
   const navigate = useNavigate();
   const [status, setStatus] = useState('checking');
+  const [bookingStatus, setBookingStatus] = useState(null);
+  const [paymentStatus, setPaymentStatus] = useState(null);
   const [attempts, setAttempts] = useState(0);
   const maxAttempts = 5;
 
@@ -32,14 +32,13 @@ const BookingSuccess = () => {
     }
 
     try {
-      const response = await axios.get(
-        `${BACKEND_URL}/api/payments/status/${sessionId}`,
-        { headers: { Authorization: `Bearer ${sessionToken}` } }
-      );
+      const response = await getPaymentStatus(sessionId);
+      setBookingStatus(response.data.booking_status || null);
+      setPaymentStatus(response.data.payment_status || null);
 
-      if (response.data.payment_status === 'paid') {
+      if (response.data.booking_status === 'confirmed') {
         setStatus('success');
-        toast.success('Payment successful!');
+        toast.success('Payment confirmed by the server');
       } else if (response.data.status === 'expired') {
         setStatus('expired');
         toast.error('Payment session expired');
@@ -64,7 +63,14 @@ const BookingSuccess = () => {
               <div className="text-center space-y-6">
                 <Loader2 className="h-16 w-16 mx-auto animate-spin text-[hsl(var(--primary))]" />
                 <h2 className="text-2xl font-bold">Verifying Payment...</h2>
-                <p className="text-gray-600">Please wait while we confirm your payment</p>
+                <p className="text-gray-600">
+                  Payment confirmation is completed securely by the payment webhook.
+                </p>
+                {(paymentStatus || bookingStatus) && (
+                  <p className="text-sm text-gray-500">
+                    Payment: {paymentStatus || 'pending'} · Booking: {bookingStatus || 'payment_pending'}
+                  </p>
+                )}
               </div>
             )}
 
@@ -75,8 +81,9 @@ const BookingSuccess = () => {
                 </div>
                 <h2 className="text-3xl font-bold text-gray-900">Booking Confirmed!</h2>
                 <p className="text-gray-600 text-lg">
-                  Your payment was successful and your booking has been confirmed.
+                  The payment webhook has confirmed your booking.
                 </p>
+                {bookingStatus && <p className="text-gray-500">Booking status: {bookingStatus}</p>}
                 <p className="text-gray-500">
                   You will receive a confirmation email shortly with all the details.
                 </p>
@@ -121,8 +128,9 @@ const BookingSuccess = () => {
               <div className="text-center space-y-6">
                 <h2 className="text-2xl font-bold text-gray-900">Payment Verification Timeout</h2>
                 <p className="text-gray-600">
-                  We're still processing your payment. Please check your email for confirmation or contact support.
+                  The payment webhook has not confirmed the booking yet. Check My Bookings for the latest status.
                 </p>
+                {bookingStatus && <p className="text-gray-500">Booking status: {bookingStatus}</p>}
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <Button onClick={() => navigate('/bookings')}>
                     View Bookings
