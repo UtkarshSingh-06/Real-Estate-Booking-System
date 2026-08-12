@@ -65,6 +65,31 @@ async def test_attachments_rejected(client, buyer, owner):
 
 
 @pytest.mark.asyncio
+async def test_conversation_pagination(client, buyer, owner, published_property):
+    for i in range(3):
+        await client.post(
+            "/api/messages",
+            headers=auth_header(buyer),
+            json={
+                "receiver_id": owner.id,
+                "property_id": published_property.id,
+                "message": f"Message {i}",
+            },
+        )
+
+    page1 = await client.get(
+        "/api/conversations",
+        headers=auth_header(buyer),
+        params={"page": 1, "page_size": 2},
+    )
+    assert page1.status_code == 200
+    body = page1.json()
+    assert body["total"] >= 1
+    assert len(body["conversations"]) <= 2
+    assert "has_next" in body
+
+
+@pytest.mark.asyncio
 async def test_conversations_only_own(client, buyer, owner, other_buyer, published_property):
     await client.post(
         "/api/messages",
