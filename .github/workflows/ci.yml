@@ -90,7 +90,26 @@ jobs:
           RUN_MYSQL_TESTS: "1"
         run: |
           set -o pipefail
-          pytest tests/integration -v --tb=long 2>&1 | tee mysql-integration.log
+          if ! pytest tests/integration -v --tb=long 2>&1 | tee mysql-integration.log; then
+            echo "::error::MySQL integration tests failed — see annotated traceback"
+            # Surface the failure into check annotations (readable without downloading logs)
+            python - <<'PY'
+          from pathlib import Path
+          text = Path("mysql-integration.log").read_text(errors="replace")
+          lines = text.strip().splitlines()
+          # Prefer FAILURES / ERRORS section; otherwise last 60 lines
+          start = 0
+          for i, line in enumerate(lines):
+              if "FAILURES" in line or "ERRORS" in line or "short test summary" in line:
+                  start = i
+                  break
+          chunk = lines[start:][-80:]
+          for line in chunk:
+              safe = line.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+              print(f"::error::{safe}")
+          PY
+            exit 1
+          fi
       - name: Upload MySQL test log
         if: always()
         uses: actions/upload-artifact@v4
