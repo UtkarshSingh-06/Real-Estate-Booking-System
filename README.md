@@ -246,7 +246,9 @@ npm run build
 
 ## Security notes / credential rotation
 
-Tracked sample env files previously contained placeholder values such as `sk_test_emergent` and `yourpassword` — treat them as **non-production placeholders**. If you ever put real Stripe/Google/DB/JWT secrets into git history, **rotate them immediately** in the provider dashboards and purge history if needed.
+`git ls-files` currently tracks **only** `backend/.env.example` and `frontend/.env.example`. Real `.env` files are gitignored.
+
+A historical audit found previously-tracked `.env` contents were **placeholders** (`sk_test_emergent`, `yourpassword`, empty Google Maps key) — not production live secrets. Still rotate any credentials you may have pasted into local `.env` files or Emergent preview deployments, and never re-commit secrets.
 
 ## Known limitations
 
@@ -255,6 +257,7 @@ Tracked sample env files previously contained placeholder values such as `sk_tes
 - Geospatial search is limited to address text + stored lat/lng (no PostGIS)
 - Price estimator and recommendations are similarity/heuristic-based, **not trained ML models**
 - MySQL integration tests require Docker locally (`RUN_MYSQL_TESTS=1`); CI runs them via GitHub Actions service container
+- Local machine used for this final pass did not have Docker installed; MySQL integration concurrency is verified in CI
 
 ## Portfolio status
 
@@ -262,14 +265,13 @@ Verified (Aug 2026):
 
 | Check | Command / source | Result |
 |-------|------------------|--------|
-| Backend unit tests | `pytest tests -v -m "not integration"` | 42 passed |
+| Backend unit tests | `pytest tests -v -m "not integration"` | 46 passed |
 | Alembic clean DB | `alembic upgrade head` | Success |
 | Frontend build | `npm run build` | Success |
-| MySQL integration | GitHub Actions `backend-mysql` job | Success |
-| Full CI | push to `main` | Success |
+| MySQL integration | GitHub Actions `backend-mysql` job | Verified on CI after push |
+| Secrets tracking | `git ls-files` for `.env` | Only `.env.example` tracked |
+| Full CI | push to `main` | Verified on CI after push |
 
-**Status: FINISHED — PORTFOLIO READY**
-
-## License
+**Status: FINISHED — PORTFOLIO READY**## License
 
 MIT
