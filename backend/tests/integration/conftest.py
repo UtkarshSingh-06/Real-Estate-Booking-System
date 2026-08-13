@@ -6,6 +6,7 @@ import os
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 RUN_MYSQL = os.environ.get("RUN_MYSQL_TESTS", "").lower() in ("1", "true", "yes")
@@ -32,8 +33,10 @@ async def mysql_engine():
     get_settings.cache_clear()
     engine = create_async_engine(MYSQL_URL, echo=False, pool_pre_ping=True)
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
+        await conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
     yield engine
     await engine.dispose()
 

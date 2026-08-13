@@ -61,12 +61,29 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Wait for MySQL and apply migrations
+        env:
+          JWT_SECRET: ci-test-secret-key-not-for-production-32
+          CORS_ORIGINS: http://localhost:3000
+          DATABASE_URL: mysql+aiomysql://root:testpassword@127.0.0.1:3306/realestate_test
+          GOOGLE_CLIENT_ID: test-client.apps.googleusercontent.com
+          STRIPE_WEBHOOK_SECRET: whsec_test
+          ENVIRONMENT: test
+        run: |
+          for i in $(seq 1 30); do
+            if python -c "import socket; s=socket.create_connection(('127.0.0.1',3306),2); s.close()"; then
+              echo "MySQL port is open"
+              break
+            fi
+            sleep 2
+          done
+          alembic upgrade head
       - name: Run MySQL integration tests
         env:
           JWT_SECRET: ci-test-secret-key-not-for-production-32
           CORS_ORIGINS: http://localhost:3000
-          DATABASE_URL: mysql+aiomysql://root:testpassword@mysql:3306/realestate_test
-          MYSQL_TEST_URL: mysql+aiomysql://root:testpassword@mysql:3306/realestate_test
+          DATABASE_URL: mysql+aiomysql://root:testpassword@127.0.0.1:3306/realestate_test
+          MYSQL_TEST_URL: mysql+aiomysql://root:testpassword@127.0.0.1:3306/realestate_test
           GOOGLE_CLIENT_ID: test-client.apps.googleusercontent.com
           STRIPE_WEBHOOK_SECRET: whsec_test
           ENVIRONMENT: test

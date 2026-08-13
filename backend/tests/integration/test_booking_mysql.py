@@ -64,7 +64,7 @@ async def test_mysql_duplicate_slot_second_booking_rejected(mysql_client, mysql_
         )
 
     first = await book_as(buyer_a)
-    assert first.status_code == 200
+    assert first.status_code == 200, first.text
 
     second = await book_as(buyer_b)
-    assert second.status_code == 409
+    assert second.status_code == 409, second.text
