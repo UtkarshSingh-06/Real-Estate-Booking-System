@@ -258,16 +258,17 @@ Tracked sample env files previously contained placeholder values such as `sk_tes
 
 ## Portfolio status
 
-Verified locally (Aug 2026):
+Verified (Aug 2026):
 
-| Check | Command | Result |
-|-------|---------|--------|
+| Check | Command / source | Result |
+|-------|------------------|--------|
 | Backend unit tests | `pytest tests -v -m "not integration"` | 42 passed |
 | Alembic clean DB | `alembic upgrade head` | Success |
 | Frontend build | `npm run build` | Success |
-| MySQL integration | `pytest tests/integration -v` with Docker | Skipped locally (no Docker); CI job configured |
+| MySQL integration | GitHub Actions `backend-mysql` job | Success |
+| Full CI | push to `main` | Success |
 
-**Status: FINISHED — PORTFOLIO READY** (pending CI green on push for MySQL job)
+**Status: FINISHED — PORTFOLIO READY**
 
 ## License
 
