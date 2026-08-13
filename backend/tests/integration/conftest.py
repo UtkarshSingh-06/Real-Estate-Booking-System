@@ -5,9 +5,9 @@ import os
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 RUN_MYSQL = os.environ.get("RUN_MYSQL_TESTS", "").lower() in ("1", "true", "yes")
 
@@ -19,11 +19,10 @@ MYSQL_URL = os.environ.get(
 if RUN_MYSQL:
     os.environ["DATABASE_URL"] = MYSQL_URL
 
-from app.db import models  # noqa: F401 — register tables on Base.metadata
+# Import models only — avoid importing app.main (binds a global engine to this loop)
+from app.db import models  # noqa: F401
 from app.core.config import get_settings
 from app.db.base import Base
-from app.db.session import get_db
-from app.main import app
 
 
 @pytest_asyncio.fixture
@@ -32,8 +31,12 @@ async def mysql_engine():
         pytest.skip("MySQL integration tests disabled")
     get_settings.cache_clear()
     print(f"\n[mysql-integration] MYSQL_URL={MYSQL_URL}")
-    engine = create_async_engine(MYSQL_URL, echo=False, pool_pre_ping=True)
-    # Ensure metadata is present even if Alembic step was skipped locally
+    engine = create_async_engine(
+        MYSQL_URL,
+        echo=False,
+        pool_pre_ping=True,
+        poolclass=NullPool,
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
@@ -44,25 +47,3 @@ async def mysql_engine():
         print(f"[mysql-integration] tables={sorted(row[0] for row in result.fetchall())}")
     yield engine
     await engine.dispose()
-
-
-@pytest_asyncio.fixture
-async def mysql_client(mysql_engine):
-    Session = async_sessionmaker(mysql_engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _override_db():
-        async with Session() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-
-    get_settings.cache_clear()
-    app.dependency_overrides[get_db] = _override_db
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
-    get_settings.cache_clear()
