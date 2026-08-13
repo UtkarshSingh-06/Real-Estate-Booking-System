@@ -32,7 +32,9 @@ async def mysql_engine():
         pytest.skip("MySQL integration tests disabled")
     get_settings.cache_clear()
     engine = create_async_engine(MYSQL_URL, echo=False, pool_pre_ping=True)
+    # Ensure metadata is present even if Alembic step was skipped locally
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
         for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(table.delete())

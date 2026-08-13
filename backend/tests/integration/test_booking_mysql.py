@@ -1,12 +1,21 @@
-"""MySQL booking concurrency integration test."""
+"""MySQL integration tests for schema, constraints, and booking concurrency."""
 from __future__ import annotations
 
-import asyncio
-import os
-
 import pytest
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from tests.conftest import auth_header, _create_user
+from app.core.enums import BookingStatus, PaymentStatus
+from app.core.exceptions import ConflictError
+from app.core.utils import make_slot_key, new_id, utcnow
+from app.db.base import Base
+from app.models.booking import Booking
+from app.models.property import Property
+from app.schemas.booking import BookingCreate
+from app.schemas.user import UserOut
+from app.services.booking import create_booking
+from tests.conftest import _create_user
 from tests.integration.conftest import RUN_MYSQL
 
 pytestmark = [
@@ -16,22 +25,103 @@ pytestmark = [
 
 
 @pytest.mark.asyncio
-async def test_mysql_duplicate_slot_second_booking_rejected(mysql_client, mysql_engine):
-    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
-    from app.models.property import Property
-    from app.core.utils import new_id, utcnow
+async def test_mysql_schema_tables_exist(mysql_engine):
+    expected = {
+        "users",
+        "user_sessions",
+        "properties",
+        "bookings",
+        "conversations",
+        "messages",
+        "payment_transactions",
+        "processed_webhook_events",
+    }
+    async with mysql_engine.connect() as conn:
+        result = await conn.execute(text("SHOW TABLES"))
+        tables = {row[0] for row in result.fetchall()}
+    missing = expected - tables
+    assert not missing, f"Missing tables after Alembic: {missing}"
 
+
+@pytest.mark.asyncio
+async def test_mysql_slot_key_unique_constraint(mysql_engine):
     Session = async_sessionmaker(mysql_engine, class_=AsyncSession, expire_on_commit=False)
     async with Session() as db:
-        owner = await _create_user(db, role="owner", email="mysql-owner@example.com")
-        buyer_a = await _create_user(db, role="buyer", email="mysql-buyer-a@example.com")
-        buyer_b = await _create_user(db, role="buyer", email="mysql-buyer-b@example.com")
+        owner = await _create_user(db, role="owner", email="slot-owner@example.com")
+        buyer = await _create_user(db, role="buyer", email="slot-buyer@example.com")
         prop = Property(
             id=new_id("prop"),
             owner_id=owner.id,
-            title="MySQL Test Home",
-            description="Integration test property for booking concurrency checks.",
-            address="1 Test Lane",
+            title="Constraint Home",
+            description="Property used to verify unique slot_key constraint on MySQL.",
+            address="2 Constraint Ave",
+            latitude=1.0,
+            longitude=2.0,
+            price=250_000,
+            property_type="house",
+            area_sqft=1200,
+            bedrooms=3,
+            bathrooms=2,
+            amenities=[],
+            images=[],
+            status="published",
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+        db.add(prop)
+        await db.flush()
+        slot = make_slot_key(prop.id, "2030-07-01", "10:00 AM")
+        first = Booking(
+            id=new_id("book"),
+            property_id=prop.id,
+            user_id=buyer.id,
+            owner_id=owner.id,
+            booking_date=utcnow(),
+            time_slot="10:00 AM",
+            slot_key=slot,
+            status=BookingStatus.REQUESTED.value,
+            payment_status=PaymentStatus.PENDING.value,
+            deposit_amount=25000,
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+        db.add(first)
+        await db.commit()
+
+        buyer2 = await _create_user(db, role="buyer", email="slot-buyer-2@example.com")
+        duplicate = Booking(
+            id=new_id("book"),
+            property_id=prop.id,
+            user_id=buyer2.id,
+            owner_id=owner.id,
+            booking_date=utcnow(),
+            time_slot="10:00 AM",
+            slot_key=slot,
+            status=BookingStatus.REQUESTED.value,
+            payment_status=PaymentStatus.PENDING.value,
+            deposit_amount=25000,
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+        db.add(duplicate)
+        with pytest.raises(IntegrityError):
+            await db.commit()
+        await db.rollback()
+
+
+@pytest.mark.asyncio
+async def test_mysql_duplicate_slot_via_service(mysql_engine):
+    Session = async_sessionmaker(mysql_engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as db:
+        owner = await _create_user(db, role="owner", email="svc-owner@example.com")
+        buyer_a = await _create_user(db, role="buyer", email="svc-buyer-a@example.com")
+        buyer_b = await _create_user(db, role="buyer", email="svc-buyer-b@example.com")
+        prop = Property(
+            id=new_id("prop"),
+            owner_id=owner.id,
+            title="Service Lock Home",
+            description="Property used to verify booking service conflict handling on MySQL.",
+            address="3 Service Lane",
             latitude=1.0,
             longitude=2.0,
             price=300_000,
@@ -48,23 +138,28 @@ async def test_mysql_duplicate_slot_second_booking_rejected(mysql_client, mysql_
         db.add(prop)
         await db.commit()
         prop_id = prop.id
+        buyer_a_out = UserOut.model_validate(buyer_a)
+        buyer_b_out = UserOut.model_validate(buyer_b)
 
-    tomorrow = "2030-06-15T10:00:00+00:00"
-    payload = {
-        "property_id": prop_id,
-        "booking_date": tomorrow,
-        "time_slot": "10:00 AM",
-    }
+    payload = BookingCreate(
+        property_id=prop_id,
+        booking_date="2030-06-15T10:00:00+00:00",
+        time_slot="10:00 AM",
+    )
 
-    async def book_as(user):
-        return await mysql_client.post(
-            "/api/bookings",
-            headers=auth_header(user),
-            json=payload,
-        )
+    async with Session() as db:
+        first = await create_booking(db, buyer_a_out, payload)
+        await db.commit()
+        assert first["status"] == BookingStatus.REQUESTED.value
+        assert first["deposit_amount"] == 30_000.0
 
-    first = await book_as(buyer_a)
-    assert first.status_code == 200, first.text
+    async with Session() as db:
+        with pytest.raises(ConflictError):
+            await create_booking(db, buyer_b_out, payload)
+        await db.rollback()
 
-    second = await book_as(buyer_b)
-    assert second.status_code == 409, second.text
+    async with Session() as db:
+        rows = (
+            await db.execute(select(Booking).where(Booking.property_id == prop_id))
+        ).scalars().all()
+        assert len(rows) == 1
