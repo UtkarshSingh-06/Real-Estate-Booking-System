@@ -58,7 +58,8 @@ const BookingsPage = () => {
       window.location.href = response.data.url;
     } catch (error) {
       console.error('Error creating checkout:', error);
-      toast.error('Failed to start deposit payment');
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to start deposit payment');
     }
   };
 

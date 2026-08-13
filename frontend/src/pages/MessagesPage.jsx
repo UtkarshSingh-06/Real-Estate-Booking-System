@@ -37,9 +37,7 @@ const MessagesPage = () => {
       auth: { token: sessionToken }
     });
 
-    newSocket.on('connect', () => {
-      console.log('Socket connected');
-    });
+    newSocket.on('connect', () => {});
 
     newSocket.on('new_message', (message) => {
       if (message.conversation_id === selectedConversationRef.current?.id) {
