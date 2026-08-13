@@ -33,6 +33,7 @@ async def estimate_price(db: AsyncSession, data: PriceEstimateInput) -> dict:
                 Property.property_type == data.property_type,
             )
         )
+        # Bounded similarity sample — not a paginated listing endpoint
         .limit(200)
     )
     result = await db.execute(stmt)
