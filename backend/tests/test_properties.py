@@ -56,21 +56,60 @@ async def test_property_update_ownership(client, owner, buyer, published_propert
 
 
 @pytest.mark.asyncio
-async def test_archive_preserves_history(client, owner, published_property):
+async def test_archive_preserves_history(
+    client, owner, buyer, published_property, tomorrow_iso
+):
+    booked = await client.post(
+        "/api/bookings",
+        headers=auth_header(buyer),
+        json={
+            "property_id": published_property.id,
+            "booking_date": tomorrow_iso,
+            "time_slot": "9:00 AM",
+        },
+    )
+    assert booked.status_code == 200
+    booking_id = booked.json()["id"]
+
     res = await client.delete(
         f"/api/properties/{published_property.id}",
         headers=auth_header(owner),
     )
     assert res.status_code == 200
-    assert "archived" in res.json()["message"].lower()
+    assert res.json().get("preserved_bookings", 0) >= 1
 
     get_res = await client.get(
         f"/api/properties/{published_property.id}",
         headers=auth_header(owner),
     )
-    # archived listings not found for public access; owner can still see via get_property
-    # Our get_property allows owner to view archived
-    assert get_res.status_code in (200, 404)
+    assert get_res.status_code == 200
+    assert get_res.json()["status"] == "archived"
+
+    listings = await client.get("/api/bookings", headers=auth_header(buyer))
+    assert listings.status_code == 200
+    assert any(b["id"] == booking_id for b in listings.json()["bookings"])
+
+
+@pytest.mark.asyncio
+async def test_archived_property_rejects_new_bookings(
+    client, owner, buyer, published_property, tomorrow_iso
+):
+    archived = await client.delete(
+        f"/api/properties/{published_property.id}",
+        headers=auth_header(owner),
+    )
+    assert archived.status_code == 200
+
+    booking = await client.post(
+        "/api/bookings",
+        headers=auth_header(buyer),
+        json={
+            "property_id": published_property.id,
+            "booking_date": tomorrow_iso,
+            "time_slot": "10:00 AM",
+        },
+    )
+    assert booking.status_code in (400, 404)
 
 
 @pytest.mark.asyncio
