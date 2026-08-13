@@ -163,3 +163,69 @@ async def test_mysql_duplicate_slot_via_service(mysql_engine):
             await db.execute(select(Booking).where(Booking.property_id == prop_id))
         ).scalars().all()
         assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_mysql_concurrent_slot_bookings_only_one_succeeds(mysql_engine):
+    """Two simultaneous create_booking calls for the same slot — exactly one wins."""
+    import asyncio
+
+    Session = async_sessionmaker(mysql_engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as db:
+        owner = await _create_user(db, role="owner", email="conc-owner@example.com")
+        buyer_a = await _create_user(db, role="buyer", email="conc-buyer-a@example.com")
+        buyer_b = await _create_user(db, role="buyer", email="conc-buyer-b@example.com")
+        prop = Property(
+            id=new_id("prop"),
+            owner_id=owner.id,
+            title="Concurrent Slot Home",
+            description="Property used to verify concurrent MySQL booking slot locking.",
+            address="4 Race Lane",
+            latitude=1.0,
+            longitude=2.0,
+            price=400_000,
+            property_type="house",
+            area_sqft=1800,
+            bedrooms=4,
+            bathrooms=2,
+            amenities=[],
+            images=[],
+            status="published",
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+        db.add(prop)
+        await db.commit()
+        prop_id = prop.id
+        buyer_a_out = UserOut.model_validate(buyer_a)
+        buyer_b_out = UserOut.model_validate(buyer_b)
+
+    payload = BookingCreate(
+        property_id=prop_id,
+        booking_date="2030-08-20T10:00:00+00:00",
+        time_slot="11:00 AM",
+    )
+
+    async def attempt(user_out: UserOut):
+        async with Session() as db:
+            try:
+                result = await create_booking(db, user_out, payload)
+                await db.commit()
+                return ("ok", result)
+            except Exception as exc:
+                await db.rollback()
+                return ("err", type(exc).__name__, str(exc))
+
+    outcomes = await asyncio.gather(attempt(buyer_a_out), attempt(buyer_b_out))
+    successes = [o for o in outcomes if o[0] == "ok"]
+    failures = [o for o in outcomes if o[0] == "err"]
+    assert len(successes) == 1, outcomes
+    assert len(failures) == 1, outcomes
+    assert failures[0][1] in ("ConflictError", "IntegrityError"), failures
+
+    async with Session() as db:
+        rows = (
+            await db.execute(select(Booking).where(Booking.property_id == prop_id))
+        ).scalars().all()
+        holding = [b for b in rows if b.slot_key]
+        assert len(holding) == 1

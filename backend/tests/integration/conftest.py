@@ -30,7 +30,6 @@ async def mysql_engine():
     if not RUN_MYSQL:
         pytest.skip("MySQL integration tests disabled")
     get_settings.cache_clear()
-    print(f"\n[mysql-integration] MYSQL_URL={MYSQL_URL}")
     engine = create_async_engine(
         MYSQL_URL,
         echo=False,
@@ -43,7 +42,5 @@ async def mysql_engine():
         for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(table.delete())
         await conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
-        result = await conn.execute(text("SHOW TABLES"))
-        print(f"[mysql-integration] tables={sorted(row[0] for row in result.fetchall())}")
     yield engine
     await engine.dispose()
